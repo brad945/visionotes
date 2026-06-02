@@ -1,0 +1,13 @@
+# Python virtual environment (machine-specific, rebuildable)
+.venv/
+__pycache__/
+*.pyc
+
+# MediaPipe model files (large binaries, re-downloadable)
+*.task
+
+# macOS junk
+.DS_Store
+
+# Editor
+.vscode/
