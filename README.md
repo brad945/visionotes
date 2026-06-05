@@ -38,7 +38,7 @@ It deliberately does **not** try to detect *which notes you played* from the cam
 ## How it works
 
 ```
-  Webcam ──▶ MediaPipe Hands (21 hand landmarks)  ──┐
+  Webcam ──▶ MediaPipe Hands (21 hand landmarks)   ──┐
         └──▶ MediaPipe Pose  (33 body landmarks)   ──┤
                                                      ▼
                                     Joint-angle geometry + smoothing
