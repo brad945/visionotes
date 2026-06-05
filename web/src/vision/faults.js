@@ -71,9 +71,14 @@ export class FaultSmoother {
   constructor(window = SMOOTHING_WINDOW) {
     this.window = window;
     this.buffers = {}; // keyed by label, e.g. "Left" / "Right"
+    this.prev = {}; // previous smoothed state per label (for edge detection)
   }
 
-  /** Push a boolean and return the smoothed verdict for that label. */
+  /**
+   * Push a boolean and return { active, started }.
+   *   active  — smoothed fault is currently on
+   *   started — fault just transitioned off→on this frame (log-worthy)
+   */
   push(label, value) {
     if (!this.buffers[label]) {
       this.buffers[label] = [];
@@ -81,12 +86,21 @@ export class FaultSmoother {
     const buf = this.buffers[label];
     buf.push(value);
     if (buf.length > this.window) buf.shift();
-    if (buf.length < this.window) return false;
-    const trueCount = buf.reduce((s, v) => s + (v ? 1 : 0), 0);
-    return trueCount > this.window / 2;
+
+    let active = false;
+    if (buf.length >= this.window) {
+      const trueCount = buf.reduce((s, v) => s + (v ? 1 : 0), 0);
+      active = trueCount > this.window / 2;
+    }
+
+    const wasActive = this.prev[label] || false;
+    this.prev[label] = active;
+
+    return { active, started: active && !wasActive };
   }
 
   clear() {
     this.buffers = {};
+    this.prev = {};
   }
 }

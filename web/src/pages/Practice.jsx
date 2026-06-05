@@ -1,23 +1,48 @@
 import { useRef, useState } from "react";
 import useVision from "../vision/useVision";
+import { startSession, endSession, postFaults } from "../api";
 
 export default function Practice() {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const [running, setRunning] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const sessionRef = useRef(null); // { id, startedAt }
   const { isLoading, error, faults, start, stop } = useVision(
     videoRef,
     canvasRef
   );
 
-  const handleToggle = async () => {
-    if (running) {
-      const events = stop();
-      console.log("Session fault events:", events);
-      setRunning(false);
-    } else {
+  const handleStart = async () => {
+    try {
+      const { session_id } = await startSession();
+      sessionRef.current = { id: session_id, startedAt: Date.now() };
       await start();
       setRunning(true);
+    } catch (e) {
+      console.error("Failed to start session:", e);
+    }
+  };
+
+  const handleStop = async () => {
+    const events = stop();
+    setRunning(false);
+    setSaving(true);
+
+    try {
+      const { id, startedAt } = sessionRef.current;
+      const durationSeconds = Math.round((Date.now() - startedAt) / 1000);
+
+      // Send summary + faults in parallel
+      await Promise.all([
+        endSession(id, durationSeconds, events.length),
+        postFaults(id, events),
+      ]);
+    } catch (e) {
+      console.error("Failed to save session:", e);
+    } finally {
+      sessionRef.current = null;
+      setSaving(false);
     }
   };
 
@@ -26,19 +51,25 @@ export default function Practice() {
       <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 16 }}>
         <h1 style={{ margin: 0 }}>Practice</h1>
         <button
-          onClick={handleToggle}
-          disabled={isLoading}
+          onClick={running ? handleStop : handleStart}
+          disabled={isLoading || saving}
           style={{
             padding: "8px 20px",
             fontSize: 16,
             borderRadius: 6,
             border: "none",
-            cursor: isLoading ? "wait" : "pointer",
+            cursor: isLoading || saving ? "wait" : "pointer",
             background: running ? "#cc3333" : "#0066cc",
             color: "#fff",
           }}
         >
-          {isLoading ? "Loading models…" : running ? "Stop" : "Start Session"}
+          {isLoading
+            ? "Loading models…"
+            : saving
+              ? "Saving…"
+              : running
+                ? "Stop"
+                : "Start Session"}
         </button>
       </div>
 
@@ -91,7 +122,7 @@ export default function Practice() {
         />
       </div>
 
-      {!running && !isLoading && (
+      {!running && !isLoading && !saving && (
         <p style={{ color: "#888", marginTop: 12 }}>
           Press <strong>Start Session</strong> to begin webcam posture tracking.
         </p>

@@ -102,6 +102,6 @@ All require an authenticated Supabase user; backend scopes queries to that user.
 - [x] 3b Browser vision (landmarks)
 - [x] 3c JS fault detection (per-hand)
 - [x] 3d Backend API (in-memory stub)
-- [ ] 3e Supabase DB + auth
-- [ ] 3f End-to-end wiring
+- [x] 3e Supabase DB + auth
+- [x] 3f End-to-end wiring
 - [ ] Phase 4 deploy

@@ -115,11 +115,14 @@ export default function useVision(videoRef, canvasRef) {
 
           const collapsed = isWristCollapsed(lm);
           const faultIndices = new Set();
-          const smoothed = wristSmootherRef.current.push(label, collapsed);
+          const { active, started } = wristSmootherRef.current.push(label, collapsed);
 
-          if (smoothed) {
+          if (active) {
             for (const idx of WRIST_FAULT_INDICES) faultIndices.add(idx);
             activeFaults.push(`${label} wrist collapsed`);
+          }
+          // Only log the event once, when the fault first fires
+          if (started) {
             faultEventsRef.current.push({
               fault_type: "collapsed_wrist",
               hand: label.toLowerCase(),
@@ -147,10 +150,12 @@ export default function useVision(videoRef, canvasRef) {
 
         for (const side of ["left", "right"]) {
           const { fault } = checkArmPosture(body, side);
-          const smoothed = armSmootherRef.current.push(side, fault);
-          if (smoothed) {
+          const { active, started } = armSmootherRef.current.push(side, fault);
+          if (active) {
             faultArms.add(side);
             activeFaults.push(`${side} arm posture`);
+          }
+          if (started) {
             faultEventsRef.current.push({
               fault_type: "arm_posture",
               hand: side,

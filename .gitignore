@@ -9,6 +9,12 @@ __pycache__/
 # macOS junk
 .DS_Store
 
+# Dependencies (rebuildable via npm install)
+node_modules/
+
+# Build output
+dist/
+
 # Editor
 .vscode/
 
