@@ -98,10 +98,10 @@ All require an authenticated Supabase user; backend scopes queries to that user.
 ---
 
 ## Progress (UPDATE as you go)
-- [ ] 3a React skeleton
-- [ ] 3b Browser vision (landmarks)
-- [ ] 3c JS fault detection (per-hand)
-- [ ] 3d Backend API
+- [x] 3a React skeleton
+- [x] 3b Browser vision (landmarks)
+- [x] 3c JS fault detection (per-hand)
+- [x] 3d Backend API (in-memory stub)
 - [ ] 3e Supabase DB + auth
 - [ ] 3f End-to-end wiring
 - [ ] Phase 4 deploy

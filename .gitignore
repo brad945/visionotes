@@ -11,3 +11,8 @@ __pycache__/
 
 # Editor
 .vscode/
+
+# Secrets / environment variables (NEVER commit)
+.env
+.env.*
+*.env
