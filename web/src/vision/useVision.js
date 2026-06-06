@@ -43,7 +43,6 @@ export default function useVision(videoRef, canvasRef) {
   const lastTsRef = useRef(0);
   const wristSmootherRef = useRef(new FaultSmoother());
   const armSmootherRef = useRef(new FaultSmoother());
-  const faultEventsRef = useRef([]); // collected during a session for later batch-upload
   const fpsFramesRef = useRef([]); // timestamps of recent frames for FPS calc
   const lastStateUpdateRef = useRef(0); // throttle React state updates
 
@@ -115,19 +114,13 @@ export default function useVision(videoRef, canvasRef) {
 
           const collapsed = isWristCollapsed(lm);
           const faultIndices = new Set();
-          const { active, started } = wristSmootherRef.current.push(label, collapsed);
+          const { active } = wristSmootherRef.current.push(
+            label, collapsed, "collapsed_wrist", label.toLowerCase(), ts
+          );
 
           if (active) {
             for (const idx of WRIST_FAULT_INDICES) faultIndices.add(idx);
             activeFaults.push(`${label} wrist collapsed`);
-          }
-          // Only log the event once, when the fault first fires
-          if (started) {
-            faultEventsRef.current.push({
-              fault_type: "collapsed_wrist",
-              hand: label.toLowerCase(),
-              timestamp_ms: ts,
-            });
           }
 
           drawHand(ctx, lm, w, h, faultIndices);
@@ -150,17 +143,12 @@ export default function useVision(videoRef, canvasRef) {
 
         for (const side of ["left", "right"]) {
           const { fault } = checkArmPosture(body, side);
-          const { active, started } = armSmootherRef.current.push(side, fault);
+          const { active } = armSmootherRef.current.push(
+            side, fault, "arm_posture", side, poseTs
+          );
           if (active) {
             faultArms.add(side);
             activeFaults.push(`${side} arm posture`);
-          }
-          if (started) {
-            faultEventsRef.current.push({
-              fault_type: "arm_posture",
-              hand: side,
-              timestamp_ms: poseTs,
-            });
           }
         }
 
@@ -208,7 +196,6 @@ export default function useVision(videoRef, canvasRef) {
     // Reset smoothing + fault log
     wristSmootherRef.current.clear();
     armSmootherRef.current.clear();
-    faultEventsRef.current = [];
     fpsFramesRef.current = [];
     lastTsRef.current = 0;
 
@@ -243,9 +230,14 @@ export default function useVision(videoRef, canvasRef) {
     }
     setFaults([]);
 
-    // Return collected fault events so caller can batch-upload them
-    const events = faultEventsRef.current;
-    faultEventsRef.current = [];
+    // Finalize any still-open fault periods and harvest all periods
+    const endMs = lastTsRef.current;
+    wristSmootherRef.current.finalize(endMs);
+    armSmootherRef.current.finalize(endMs);
+    const events = [
+      ...wristSmootherRef.current.harvest(),
+      ...armSmootherRef.current.harvest(),
+    ];
     return events;
   }, [videoRef]);
 

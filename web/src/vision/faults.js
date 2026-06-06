@@ -4,6 +4,7 @@
  * Key differences from the spike:
  *  - Per-hand smoothing (separate buffer per hand label).
  *  - Returns which landmark indices are faulting (for joint-level coloring).
+ *  - Tracks fault periods (start + end) for history logging.
  */
 
 const SMOOTHING_WINDOW = 7;
@@ -65,21 +66,23 @@ export const ARM_INDICES = {
   right: { shoulder: 12, elbow: 14, wrist: 16 },
 };
 
-// --- Per-hand smoothing buffer ---------------------------------------------------
+// --- Per-hand smoothing buffer with period tracking ------------------------------
 
 export class FaultSmoother {
   constructor(window = SMOOTHING_WINDOW) {
     this.window = window;
     this.buffers = {}; // keyed by label, e.g. "Left" / "Right"
-    this.prev = {}; // previous smoothed state per label (for edge detection)
+    this.prev = {}; // previous smoothed state per label
+    this.openPeriods = {}; // label -> { fault_type, hand, start_ms } (currently active)
+    this.periods = []; // completed periods: { fault_type, hand, timestamp_ms, value (duration) }
   }
 
   /**
    * Push a boolean and return { active, started }.
    *   active  — smoothed fault is currently on
-   *   started — fault just transitioned off→on this frame (log-worthy)
+   *   started — fault just transitioned off→on this frame
    */
-  push(label, value) {
+  push(label, value, faultType, hand, timestampMs) {
     if (!this.buffers[label]) {
       this.buffers[label] = [];
     }
@@ -96,11 +99,51 @@ export class FaultSmoother {
     const wasActive = this.prev[label] || false;
     this.prev[label] = active;
 
-    return { active, started: active && !wasActive };
+    const started = active && !wasActive;
+    const ended = !active && wasActive;
+
+    // Track fault periods
+    if (started) {
+      this.openPeriods[label] = { fault_type: faultType, hand, start_ms: timestampMs };
+    }
+    if (ended && this.openPeriods[label]) {
+      const open = this.openPeriods[label];
+      this.periods.push({
+        fault_type: open.fault_type,
+        hand: open.hand,
+        timestamp_ms: open.start_ms,
+        value: timestampMs - open.start_ms, // duration in ms
+      });
+      delete this.openPeriods[label];
+    }
+
+    return { active, started };
+  }
+
+  /** Finalize any still-open periods (called when session stops). */
+  finalize(endMs) {
+    for (const [label, open] of Object.entries(this.openPeriods)) {
+      this.periods.push({
+        fault_type: open.fault_type,
+        hand: open.hand,
+        timestamp_ms: open.start_ms,
+        value: endMs - open.start_ms,
+      });
+    }
+    this.openPeriods = {};
+  }
+
+  /** Return all completed periods and reset. */
+  harvest() {
+    const result = [...this.periods];
+    this.periods = [];
+    return result;
   }
 
   clear() {
     this.buffers = {};
     this.prev = {};
+    this.openPeriods = {};
+    this.periods = [];
   }
 }
