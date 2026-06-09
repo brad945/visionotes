@@ -26,17 +26,22 @@ function formatDuration(seconds) {
   return m > 0 ? `${m}m ${s}s` : `${s}s`;
 }
 
-function formatMs(ms) {
-  const s = Math.floor(ms / 1000);
-  const m = Math.floor(s / 60);
-  const rem = s % 60;
-  return `${m}:${String(rem).padStart(2, "0")}`;
+function secondTickLabel(seconds) {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return m > 0 ? `${m}:${String(s).padStart(2, "0")}` : `${s}s`;
+}
+
+function formatPreciseSecond(ms) {
+  return `${(ms / 1000).toFixed(2)}s`;
 }
 
 // --- Timeline chart (canvas-based) -----------------------------------------------
 
 function Timeline({ faults, sessionDurationMs, timeOrigin }) {
   const canvasRef = useRef(null);
+  const barHitboxesRef = useRef([]);
+  const [hoveredBar, setHoveredBar] = useState(null);
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -52,6 +57,7 @@ function Timeline({ faults, sessionDurationMs, timeOrigin }) {
     const H = rect.height;
 
     ctx.clearRect(0, 0, W, H);
+    const barHitboxes = [];
 
     // Group faults into lanes by type+hand
     const lanes = {};
@@ -66,22 +72,33 @@ function Timeline({ faults, sessionDurationMs, timeOrigin }) {
     const chartLeft = labelWidth + 8;
     const chartWidth = W - chartLeft - 16;
     const laneHeight = Math.min(28, (H - 30) / Math.max(laneKeys.length, 1));
-    const topPad = 20;
+    const topPad = 8;
+    const lanesBottom = topPad + laneKeys.length * laneHeight;
 
-    // Time axis
-    ctx.fillStyle = "#999";
-    ctx.font = "11px system-ui, sans-serif";
-    const ticks = 5;
-    for (let i = 0; i <= ticks; i++) {
-      const x = chartLeft + (chartWidth * i) / ticks;
-      const t = (sessionDurationMs * i) / ticks;
-      ctx.fillText(formatMs(t), x - 12, topPad - 4);
-      ctx.strokeStyle = "#eee";
+    // One vertical guide per second makes the event timing easier to scan.
+    const totalSeconds = Math.max(1, Math.ceil(sessionDurationMs / 1000));
+    const secondsPerLabel = Math.max(1, Math.ceil(32 / (chartWidth / totalSeconds)));
+
+    // Lane backgrounds
+    for (let i = 0; i < laneKeys.length; i++) {
+      const y = topPad + i * laneHeight;
+      ctx.fillStyle = i % 2 === 0 ? "#fafafa" : "#fff";
+      ctx.fillRect(chartLeft, y, chartWidth, laneHeight);
+    }
+
+    for (let second = 0; second <= totalSeconds; second++) {
+      const tickMs = Math.min(second * 1000, sessionDurationMs);
+      const x = chartLeft + (chartWidth * tickMs) / sessionDurationMs;
+      const isMinute = second > 0 && second % 60 === 0;
+      const isEndpoint = second === 0 || second === totalSeconds;
+      ctx.strokeStyle = isMinute || isEndpoint ? "#bdbdbd" : "#dedede";
+      ctx.lineWidth = isMinute || isEndpoint ? 1.25 : 1;
       ctx.beginPath();
       ctx.moveTo(x, topPad);
-      ctx.lineTo(x, topPad + laneKeys.length * laneHeight);
+      ctx.lineTo(x, lanesBottom);
       ctx.stroke();
     }
+    ctx.lineWidth = 1;
 
     // Lanes
     for (let i = 0; i < laneKeys.length; i++) {
@@ -92,10 +109,6 @@ function Timeline({ faults, sessionDurationMs, timeOrigin }) {
       ctx.fillStyle = "#333";
       ctx.font = "12px system-ui, sans-serif";
       ctx.fillText(lane.label, 4, y + laneHeight / 2 + 4);
-
-      // Background stripe
-      ctx.fillStyle = i % 2 === 0 ? "#fafafa" : "#fff";
-      ctx.fillRect(chartLeft, y, chartWidth, laneHeight);
 
       // Fault bars
       for (const ev of lane.events) {
@@ -108,9 +121,69 @@ function Timeline({ faults, sessionDurationMs, timeOrigin }) {
         ctx.globalAlpha = (ev.value || 0) >= SIGNIFICANT_THRESHOLD_MS ? 0.9 : 0.3;
         ctx.fillRect(barX, y + 3, barW, laneHeight - 6);
         ctx.globalAlpha = 1;
+
+        const startMs = ev.timestamp_ms - timeOrigin;
+        const endMs = startMs + (ev.value || 0);
+        barHitboxes.push({
+          x1: barX - 3,
+          x2: barX + barW + 3,
+          y1: y + 1,
+          y2: y + laneHeight - 1,
+          label: lane.label,
+          color: lane.color,
+          startMs,
+          endMs,
+          durationMs: ev.value || 0,
+        });
       }
     }
+    barHitboxesRef.current = barHitboxes;
+
+    // Time axis labels at bottom
+    ctx.fillStyle = "#999";
+    ctx.font = "11px system-ui, sans-serif";
+    for (let second = 0; second <= totalSeconds; second++) {
+      const shouldLabel = second === 0 || second === totalSeconds || second % secondsPerLabel === 0;
+      if (!shouldLabel) continue;
+
+      const tickMs = Math.min(second * 1000, sessionDurationMs);
+      const x = chartLeft + (chartWidth * tickMs) / sessionDurationMs;
+      const label = secondTickLabel(second);
+      const textWidth = ctx.measureText(label).width;
+      const labelX = Math.min(
+        chartLeft + chartWidth - textWidth,
+        Math.max(chartLeft, x - textWidth / 2)
+      );
+      ctx.fillText(label, labelX, lanesBottom + 16);
+    }
   }, [faults, sessionDurationMs, timeOrigin]);
+
+  const handleMouseMove = useCallback((event) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
+    const hit = barHitboxesRef.current.find((box) => (
+      x >= box.x1 && x <= box.x2 && y >= box.y1 && y <= box.y2
+    ));
+
+    if (!hit) {
+      setHoveredBar(null);
+      return;
+    }
+
+    setHoveredBar({
+      ...hit,
+      x: Math.min(rect.width - 12, Math.max(12, x)),
+      y: Math.max(12, y),
+    });
+  }, []);
+
+  const handleMouseLeave = useCallback(() => {
+    setHoveredBar(null);
+  }, []);
 
   useEffect(() => {
     draw();
@@ -119,13 +192,50 @@ function Timeline({ faults, sessionDurationMs, timeOrigin }) {
   }, [draw]);
 
   const laneCount = new Set(faults.map((f) => `${f.hand}_${f.fault_type}`)).size;
-  const height = Math.max(80, 20 + laneCount * 28 + 10);
+  const height = Math.max(80, 8 + laneCount * 28 + 24);
 
   return (
-    <canvas
-      ref={canvasRef}
-      style={{ width: "100%", height, display: "block" }}
-    />
+    <div style={{ position: "relative" }}>
+      <canvas
+        ref={canvasRef}
+        onMouseMove={handleMouseMove}
+        onMouseLeave={handleMouseLeave}
+        style={{ width: "100%", height, display: "block", cursor: hoveredBar ? "pointer" : "default" }}
+      />
+      <div
+        style={{
+          position: "absolute",
+          left: hoveredBar ? hoveredBar.x : 0,
+          top: hoveredBar ? hoveredBar.y : 0,
+          transform: hoveredBar ? "translate(-50%, calc(-100% - 10px)) scale(1)" : "translate(-50%, calc(-100% - 4px)) scale(0.96)",
+          opacity: hoveredBar ? 1 : 0,
+          pointerEvents: "none",
+          transition: "opacity 120ms ease, transform 120ms ease",
+          background: "#111",
+          color: "#fff",
+          borderRadius: 6,
+          boxShadow: "0 8px 22px rgba(0, 0, 0, 0.22)",
+          padding: "8px 10px",
+          minWidth: 180,
+          zIndex: 2,
+          fontSize: 12,
+          lineHeight: 1.35,
+        }}
+      >
+        {hoveredBar && (
+          <>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 700, marginBottom: 3 }}>
+              <span style={{ width: 8, height: 8, borderRadius: 2, background: hoveredBar.color, display: "inline-block" }} />
+              {hoveredBar.label}
+            </div>
+            <div>{formatPreciseSecond(hoveredBar.startMs)} to {formatPreciseSecond(hoveredBar.endMs)}</div>
+            <div style={{ color: "#cfcfcf" }}>
+              {formatPreciseSecond(hoveredBar.durationMs)} {hoveredBar.durationMs >= SIGNIFICANT_THRESHOLD_MS ? "sustained fault" : "brief blip"}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
   );
 }
 
