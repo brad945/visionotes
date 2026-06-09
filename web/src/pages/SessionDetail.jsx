@@ -4,13 +4,46 @@ import { getSession } from "../api";
 
 const SIGNIFICANT_THRESHOLD_MS = 500;
 
-const FAULT_COLORS = {
-  collapsed_wrist: { left: "#e63946", right: "#f4845f" },
-  arm_posture: { left: "#457b9d", right: "#a8dadc" },
+const HAND_VISUALS = {
+  left: { accent: "#0f766e", fill: "#14b8a6", soft: "#ccfbf1", name: "Left side" },
+  right: { accent: "#7c3aed", fill: "#8b5cf6", soft: "#ede9fe", name: "Right side" },
 };
 
-function faultColor(type, hand) {
-  return FAULT_COLORS[type]?.[hand] ?? "#888";
+const DEFAULT_HAND_VISUAL = { accent: "#525252", fill: "#737373", soft: "#f5f5f5", name: "Unassigned side" };
+
+const FAULT_TYPE_VISUALS = {
+  collapsed_wrist: { pattern: "solid", weight: "dense", borderStyle: "solid", radius: 5 },
+  arm_posture: { pattern: "rail", weight: "open", borderStyle: "solid", radius: 5 },
+};
+
+function faultVisual(type, hand) {
+  const handVisual = HAND_VISUALS[hand] ?? DEFAULT_HAND_VISUAL;
+  const typeVisual = FAULT_TYPE_VISUALS[type] ?? FAULT_TYPE_VISUALS.collapsed_wrist;
+  const isArm = type === "arm_posture";
+  return {
+    ...typeVisual,
+    accent: handVisual.accent,
+    fill: isArm ? handVisual.soft : handVisual.fill,
+    stripe: handVisual.accent,
+    handName: handVisual.name,
+  };
+}
+
+function visualSwatchStyle(visual, size = 14) {
+  const background = visual.pattern === "rail"
+    ? `linear-gradient(${visual.fill}, ${visual.fill}), linear-gradient(to right, transparent 42%, ${visual.accent} 42% 58%, transparent 58%)`
+    : visual.fill;
+
+  return {
+    width: size,
+    height: size,
+    borderRadius: visual.radius,
+    background,
+    backgroundBlendMode: "normal",
+    border: `2px ${visual.borderStyle} ${visual.accent}`,
+    display: "inline-block",
+    boxSizing: "border-box",
+  };
 }
 
 function faultLabel(type, hand) {
@@ -34,6 +67,33 @@ function secondTickLabel(seconds) {
 
 function formatPreciseSecond(ms) {
   return `${(ms / 1000).toFixed(2)}s`;
+}
+
+function drawFaultBar(ctx, x, y, width, height, visual, alpha) {
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = visual.fill;
+  ctx.beginPath();
+  ctx.roundRect(x, y, width, height, visual.radius);
+  ctx.fill();
+  ctx.globalAlpha = Math.min(1, alpha + 0.2);
+  ctx.strokeStyle = visual.accent;
+  ctx.lineWidth = visual.pattern === "rail" ? 1.5 : 1;
+  ctx.stroke();
+
+  if (visual.pattern === "rail" && width > 5) {
+    const centerY = y + height / 2;
+    const inset = Math.min(5, Math.max(2, width / 5));
+    ctx.globalAlpha = Math.min(1, alpha + 0.18);
+    ctx.strokeStyle = visual.accent;
+    ctx.lineWidth = 1.25;
+    ctx.beginPath();
+    ctx.moveTo(x + inset, centerY);
+    ctx.lineTo(x + width - inset, centerY);
+    ctx.stroke();
+  }
+
+  ctx.restore();
 }
 
 // --- Timeline chart (canvas-based) -----------------------------------------------
@@ -63,7 +123,7 @@ function Timeline({ faults, sessionDurationMs, timeOrigin }) {
     const lanes = {};
     for (const f of faults) {
       const key = `${f.hand ?? ""}_${f.fault_type}`;
-      if (!lanes[key]) lanes[key] = { label: faultLabel(f.fault_type, f.hand), color: faultColor(f.fault_type, f.hand), events: [] };
+      if (!lanes[key]) lanes[key] = { label: faultLabel(f.fault_type, f.hand), visual: faultVisual(f.fault_type, f.hand), events: [] };
       lanes[key].events.push(f);
     }
 
@@ -117,10 +177,8 @@ function Timeline({ faults, sessionDurationMs, timeOrigin }) {
         const barX = chartLeft + startFrac * chartWidth;
         const barW = Math.max(2, durFrac * chartWidth);
 
-        ctx.fillStyle = lane.color;
-        ctx.globalAlpha = (ev.value || 0) >= SIGNIFICANT_THRESHOLD_MS ? 0.9 : 0.3;
-        ctx.fillRect(barX, y + 3, barW, laneHeight - 6);
-        ctx.globalAlpha = 1;
+        const alpha = (ev.value || 0) >= SIGNIFICANT_THRESHOLD_MS ? 0.95 : 0.38;
+        drawFaultBar(ctx, barX, y + 3, barW, laneHeight - 6, lane.visual, alpha);
 
         const startMs = ev.timestamp_ms - timeOrigin;
         const endMs = startMs + (ev.value || 0);
@@ -130,7 +188,7 @@ function Timeline({ faults, sessionDurationMs, timeOrigin }) {
           y1: y + 1,
           y2: y + laneHeight - 1,
           label: lane.label,
-          color: lane.color,
+          visual: lane.visual,
           startMs,
           endMs,
           durationMs: ev.value || 0,
@@ -225,7 +283,7 @@ function Timeline({ faults, sessionDurationMs, timeOrigin }) {
         {hoveredBar && (
           <>
             <div style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 700, marginBottom: 3 }}>
-              <span style={{ width: 8, height: 8, borderRadius: 2, background: hoveredBar.color, display: "inline-block" }} />
+              <span style={visualSwatchStyle(hoveredBar.visual, 10)} />
               {hoveredBar.label}
             </div>
             <div>{formatPreciseSecond(hoveredBar.startMs)} to {formatPreciseSecond(hoveredBar.endMs)}</div>
@@ -241,23 +299,57 @@ function Timeline({ faults, sessionDurationMs, timeOrigin }) {
 
 // --- Legend -----------------------------------------------------------------------
 
-function Legend({ faults }) {
+function faultKey(fault) {
+  return `${fault.hand ?? ""}_${fault.fault_type}`;
+}
+
+function Legend({ faults, selectedKeys, onToggle }) {
   const seen = new Set();
   const items = [];
   for (const f of faults) {
-    const key = `${f.hand}_${f.fault_type}`;
+    const key = faultKey(f);
     if (seen.has(key)) continue;
     seen.add(key);
-    items.push({ key, label: faultLabel(f.fault_type, f.hand), color: faultColor(f.fault_type, f.hand) });
+    items.push({ key, label: faultLabel(f.fault_type, f.hand), visual: faultVisual(f.fault_type, f.hand) });
   }
+  const hasSelection = selectedKeys.size > 0;
+
   return (
     <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 12, fontSize: 13 }}>
-      {items.map((it) => (
-        <span key={it.key} style={{ display: "flex", alignItems: "center", gap: 4 }}>
-          <span style={{ width: 12, height: 12, borderRadius: 2, background: it.color, display: "inline-block" }} />
-          {it.label}
-        </span>
-      ))}
+      {items.map((it) => {
+        const checked = selectedKeys.has(it.key);
+        const isDimmed = hasSelection && !checked;
+
+        return (
+          <label
+            key={it.key}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 7,
+              color: "#222",
+              cursor: "pointer",
+              font: "inherit",
+              opacity: isDimmed ? 0.35 : 1,
+              transition: "opacity 140ms ease",
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={checked}
+              onChange={() => onToggle(it.key)}
+              style={{
+                width: 16,
+                height: 16,
+                margin: 0,
+                accentColor: "#555",
+                cursor: "pointer",
+              }}
+            />
+            {it.label}
+          </label>
+        );
+      })}
       <span style={{ display: "flex", alignItems: "center", gap: 4, color: "#999" }}>
         <span style={{ width: 12, height: 12, borderRadius: 2, background: "#ccc", opacity: 0.3, display: "inline-block" }} />
         {"< 0.5s (minor)"}
@@ -274,6 +366,7 @@ export default function SessionDetail() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [showDetailed, setShowDetailed] = useState(false);
+  const [selectedFaultKeys, setSelectedFaultKeys] = useState(new Set());
 
   useEffect(() => {
     getSession(sessionId)
@@ -282,10 +375,17 @@ export default function SessionDetail() {
       .finally(() => setLoading(false));
   }, [sessionId]);
 
+  useEffect(() => {
+    setSelectedFaultKeys(new Set());
+  }, [sessionId]);
+
   if (loading) return <main style={{ padding: "32px 0" }}>Loading…</main>;
   if (error) return <main style={{ padding: "32px 0", color: "red" }}>Error: {error}</main>;
 
   const allFaults = session.fault_events || [];
+  const visibleFaults = selectedFaultKeys.size > 0
+    ? allFaults.filter((f) => selectedFaultKeys.has(faultKey(f)))
+    : allFaults;
   const significant = allFaults.filter((f) => (f.value || 0) >= SIGNIFICANT_THRESHOLD_MS);
   const sessionDurationMs = (session.duration_seconds || 1) * 1000;
   const timeOrigin = allFaults.length > 0
@@ -295,12 +395,24 @@ export default function SessionDetail() {
   // Group significant faults by type+hand for summary cards
   const summary = {};
   for (const f of significant) {
-    const key = `${f.hand ?? ""}_${f.fault_type}`;
+    const key = faultKey(f);
     if (!summary[key]) {
-      summary[key] = { label: faultLabel(f.fault_type, f.hand), color: faultColor(f.fault_type, f.hand), count: 0, totalMs: 0 };
+      summary[key] = { label: faultLabel(f.fault_type, f.hand), visual: faultVisual(f.fault_type, f.hand), count: 0, totalMs: 0 };
     }
     summary[key].count++;
     summary[key].totalMs += f.value || 0;
+  }
+
+  function toggleFaultKey(key) {
+    setSelectedFaultKeys((current) => {
+      const next = new Set(current);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
   }
 
   return (
@@ -323,15 +435,18 @@ export default function SessionDetail() {
               key={s.label}
               style={{
                 background: "#fff",
-                border: `2px solid ${s.color}`,
+                border: `2px ${s.visual.borderStyle} ${s.visual.accent}`,
                 borderRadius: 8,
                 padding: "10px 18px",
                 minWidth: 140,
               }}
             >
-              <div style={{ fontSize: 13, color: "#555" }}>{s.label}</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 13, color: "#555" }}>
+                <span style={visualSwatchStyle(s.visual, 14)} />
+                {s.label}
+              </div>
               <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginTop: 4 }}>
-                <span style={{ fontSize: 28, fontWeight: 700, color: s.color }}>{s.count}</span>
+                <span style={{ fontSize: 28, fontWeight: 700, color: s.visual.accent }}>{s.count}</span>
                 <span style={{ fontSize: 13, color: "#888" }}>
                   {(s.totalMs / 1000).toFixed(1)}s total
                 </span>
@@ -367,8 +482,8 @@ export default function SessionDetail() {
 
           {showDetailed && (
             <div style={{ border: "1px solid #eee", borderRadius: 8, padding: 16, background: "#fafafa" }}>
-              <Legend faults={allFaults} />
-              <Timeline faults={allFaults} sessionDurationMs={sessionDurationMs} timeOrigin={timeOrigin} />
+              <Legend faults={allFaults} selectedKeys={selectedFaultKeys} onToggle={toggleFaultKey} />
+              <Timeline faults={visibleFaults} sessionDurationMs={sessionDurationMs} timeOrigin={timeOrigin} />
               <p style={{ fontSize: 12, color: "#999", marginTop: 8, marginBottom: 0 }}>
                 Solid bars = sustained faults ({">"} 0.5s). Faded bars = brief blips ({"<"} 0.5s).
               </p>
