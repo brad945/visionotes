@@ -64,18 +64,20 @@ function drawFaultBar(ctx, x, y, width, height, visual, alpha, label) {
   ctx.roundRect(x, y, width, height, visual.radius);
   ctx.fill();
 
-  ctx.save();
-  ctx.clip();
-  const maxFontSize = Math.min(11, height - 5);
-  const widthBasedFontSize = ((width - 4) / Math.max(label.length, 1)) * 1.35;
-  const fontSize = Math.max(4, Math.min(maxFontSize, widthBasedFontSize));
-  ctx.globalAlpha = Math.min(1, alpha + 0.25);
-  ctx.fillStyle = "#fff";
-  ctx.font = `700 ${fontSize}px system-ui, sans-serif`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText(label, x + width / 2, y + height / 2 + 0.2);
-  ctx.restore();
+  if (label) {
+    ctx.save();
+    ctx.clip();
+    const maxFontSize = Math.min(11, height - 5);
+    const widthBasedFontSize = ((width - 4) / label.length) * 1.35;
+    const fontSize = Math.max(4, Math.min(maxFontSize, widthBasedFontSize));
+    ctx.globalAlpha = Math.min(1, alpha + 0.25);
+    ctx.fillStyle = "#fff";
+    ctx.font = `700 ${fontSize}px system-ui, sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(label, x + width / 2, y + height / 2 + 0.2);
+    ctx.restore();
+  }
 
   ctx.globalAlpha = Math.min(1, alpha + 0.2);
   ctx.strokeStyle = visual.accent;
@@ -166,7 +168,9 @@ function Timeline({ faults, sessionDurationMs, timeOrigin }) {
         const barW = Math.max(2, durFrac * chartWidth);
 
         const alpha = (ev.value || 0) >= SIGNIFICANT_THRESHOLD_MS ? 0.95 : 0.38;
-        const barLabel = faultInitials(ev.fault_type, ev.hand);
+        const barLabel = (ev.value || 0) >= SIGNIFICANT_THRESHOLD_MS
+          ? faultInitials(ev.fault_type, ev.hand)
+          : "";
         drawFaultBar(ctx, barX, y + 3, barW, laneHeight - 6, lane.visual, alpha, barLabel);
 
         const startMs = ev.timestamp_ms - timeOrigin;
