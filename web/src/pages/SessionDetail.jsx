@@ -4,42 +4,23 @@ import { getSession } from "../api";
 
 const SIGNIFICANT_THRESHOLD_MS = 500;
 
-const HAND_VISUALS = {
-  left: { accent: "#0f766e", fill: "#14b8a6", soft: "#ccfbf1", name: "Left side" },
-  right: { accent: "#7c3aed", fill: "#8b5cf6", soft: "#ede9fe", name: "Right side" },
+const FAULT_VISUAL = {
+  accent: "#333",
+  fill: "#333",
+  borderStyle: "solid",
+  radius: 5,
 };
 
-const DEFAULT_HAND_VISUAL = { accent: "#525252", fill: "#737373", soft: "#f5f5f5", name: "Unassigned side" };
-
-const FAULT_TYPE_VISUALS = {
-  collapsed_wrist: { pattern: "solid", weight: "dense", borderStyle: "solid", radius: 5 },
-  arm_posture: { pattern: "rail", weight: "open", borderStyle: "solid", radius: 5 },
-};
-
-function faultVisual(type, hand) {
-  const handVisual = HAND_VISUALS[hand] ?? DEFAULT_HAND_VISUAL;
-  const typeVisual = FAULT_TYPE_VISUALS[type] ?? FAULT_TYPE_VISUALS.collapsed_wrist;
-  const isArm = type === "arm_posture";
-  return {
-    ...typeVisual,
-    accent: handVisual.accent,
-    fill: isArm ? handVisual.soft : handVisual.fill,
-    stripe: handVisual.accent,
-    handName: handVisual.name,
-  };
+function faultVisual() {
+  return FAULT_VISUAL;
 }
 
 function visualSwatchStyle(visual, size = 14) {
-  const background = visual.pattern === "rail"
-    ? `linear-gradient(${visual.fill}, ${visual.fill}), linear-gradient(to right, transparent 42%, ${visual.accent} 42% 58%, transparent 58%)`
-    : visual.fill;
-
   return {
     width: size,
     height: size,
     borderRadius: visual.radius,
-    background,
-    backgroundBlendMode: "normal",
+    background: visual.fill,
     border: `2px ${visual.borderStyle} ${visual.accent}`,
     display: "inline-block",
     boxSizing: "border-box",
@@ -50,6 +31,12 @@ function faultLabel(type, hand) {
   const t = type === "collapsed_wrist" ? "Wrist Collapsed" : "Arm Posture";
   const h = hand ? hand.charAt(0).toUpperCase() + hand.slice(1) : "";
   return `${h} ${t}`.trim();
+}
+
+function faultInitials(type, hand) {
+  const handInitial = hand?.charAt(0) ?? "";
+  const typeInitial = type === "collapsed_wrist" ? "w" : "a";
+  return `${handInitial}${typeInitial}`;
 }
 
 function formatDuration(seconds) {
@@ -69,30 +56,31 @@ function formatPreciseSecond(ms) {
   return `${(ms / 1000).toFixed(2)}s`;
 }
 
-function drawFaultBar(ctx, x, y, width, height, visual, alpha) {
+function drawFaultBar(ctx, x, y, width, height, visual, alpha, label) {
   ctx.save();
   ctx.globalAlpha = alpha;
   ctx.fillStyle = visual.fill;
   ctx.beginPath();
   ctx.roundRect(x, y, width, height, visual.radius);
   ctx.fill();
+
+  ctx.save();
+  ctx.clip();
+  const maxFontSize = Math.min(11, height - 5);
+  const widthBasedFontSize = ((width - 4) / Math.max(label.length, 1)) * 1.35;
+  const fontSize = Math.max(4, Math.min(maxFontSize, widthBasedFontSize));
+  ctx.globalAlpha = Math.min(1, alpha + 0.25);
+  ctx.fillStyle = "#fff";
+  ctx.font = `700 ${fontSize}px system-ui, sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(label, x + width / 2, y + height / 2 + 0.2);
+  ctx.restore();
+
   ctx.globalAlpha = Math.min(1, alpha + 0.2);
   ctx.strokeStyle = visual.accent;
-  ctx.lineWidth = visual.pattern === "rail" ? 1.5 : 1;
+  ctx.lineWidth = 1;
   ctx.stroke();
-
-  if (visual.pattern === "rail" && width > 5) {
-    const centerY = y + height / 2;
-    const inset = Math.min(5, Math.max(2, width / 5));
-    ctx.globalAlpha = Math.min(1, alpha + 0.18);
-    ctx.strokeStyle = visual.accent;
-    ctx.lineWidth = 1.25;
-    ctx.beginPath();
-    ctx.moveTo(x + inset, centerY);
-    ctx.lineTo(x + width - inset, centerY);
-    ctx.stroke();
-  }
-
   ctx.restore();
 }
 
@@ -151,7 +139,7 @@ function Timeline({ faults, sessionDurationMs, timeOrigin }) {
       const x = chartLeft + (chartWidth * tickMs) / sessionDurationMs;
       const isMinute = second > 0 && second % 60 === 0;
       const isEndpoint = second === 0 || second === totalSeconds;
-      ctx.strokeStyle = isMinute || isEndpoint ? "#bdbdbd" : "#dedede";
+      ctx.strokeStyle = isMinute || isEndpoint ? "#9f9f9f" : "#d4d4d4";
       ctx.lineWidth = isMinute || isEndpoint ? 1.25 : 1;
       ctx.beginPath();
       ctx.moveTo(x, topPad);
@@ -178,7 +166,8 @@ function Timeline({ faults, sessionDurationMs, timeOrigin }) {
         const barW = Math.max(2, durFrac * chartWidth);
 
         const alpha = (ev.value || 0) >= SIGNIFICANT_THRESHOLD_MS ? 0.95 : 0.38;
-        drawFaultBar(ctx, barX, y + 3, barW, laneHeight - 6, lane.visual, alpha);
+        const barLabel = faultInitials(ev.fault_type, ev.hand);
+        drawFaultBar(ctx, barX, y + 3, barW, laneHeight - 6, lane.visual, alpha, barLabel);
 
         const startMs = ev.timestamp_ms - timeOrigin;
         const endMs = startMs + (ev.value || 0);
@@ -198,8 +187,8 @@ function Timeline({ faults, sessionDurationMs, timeOrigin }) {
     barHitboxesRef.current = barHitboxes;
 
     // Time axis labels at bottom
-    ctx.fillStyle = "#999";
-    ctx.font = "11px system-ui, sans-serif";
+    ctx.fillStyle = "#555";
+    ctx.font = "600 12px system-ui, sans-serif";
     for (let second = 0; second <= totalSeconds; second++) {
       const shouldLabel = second === 0 || second === totalSeconds || second % secondsPerLabel === 0;
       if (!shouldLabel) continue;
