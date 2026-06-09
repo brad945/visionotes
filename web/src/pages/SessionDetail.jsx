@@ -34,8 +34,8 @@ function faultLabel(type, hand) {
 }
 
 function faultInitials(type, hand) {
-  const handInitial = hand?.charAt(0) ?? "";
-  const typeInitial = type === "collapsed_wrist" ? "w" : "a";
+  const handInitial = hand?.charAt(0).toUpperCase() ?? "";
+  const typeInitial = type === "collapsed_wrist" ? "W" : "A";
   return `${handInitial}${typeInitial}`;
 }
 
