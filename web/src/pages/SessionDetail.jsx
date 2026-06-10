@@ -290,65 +290,8 @@ function Timeline({ faults, sessionDurationMs, timeOrigin }) {
   );
 }
 
-// --- Legend -----------------------------------------------------------------------
-
 function faultKey(fault) {
   return `${fault.hand ?? ""}_${fault.fault_type}`;
-}
-
-function Legend({ faults, selectedKeys, onToggle }) {
-  const seen = new Set();
-  const items = [];
-  for (const f of faults) {
-    const key = faultKey(f);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    items.push({ key, label: faultLabel(f.fault_type, f.hand), visual: faultVisual(f.fault_type, f.hand) });
-  }
-  const hasSelection = selectedKeys.size > 0;
-
-  return (
-    <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 12, fontSize: 13 }}>
-      {items.map((it) => {
-        const checked = selectedKeys.has(it.key);
-        const isDimmed = hasSelection && !checked;
-
-        return (
-          <label
-            key={it.key}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 7,
-              color: "#222",
-              cursor: "pointer",
-              font: "inherit",
-              opacity: isDimmed ? 0.35 : 1,
-              transition: "opacity 140ms ease",
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={checked}
-              onChange={() => onToggle(it.key)}
-              style={{
-                width: 16,
-                height: 16,
-                margin: 0,
-                accentColor: "#555",
-                cursor: "pointer",
-              }}
-            />
-            {it.label}
-          </label>
-        );
-      })}
-      <span style={{ display: "flex", alignItems: "center", gap: 4, color: "#999" }}>
-        <span style={{ width: 12, height: 12, borderRadius: 2, background: "#ccc", opacity: 0.3, display: "inline-block" }} />
-        {"< 0.5s (minor)"}
-      </span>
-    </div>
-  );
 }
 
 // --- Main component --------------------------------------------------------------
@@ -390,11 +333,21 @@ export default function SessionDetail() {
   for (const f of significant) {
     const key = faultKey(f);
     if (!summary[key]) {
-      summary[key] = { label: faultLabel(f.fault_type, f.hand), visual: faultVisual(f.fault_type, f.hand), count: 0, totalMs: 0 };
+      summary[key] = {
+        key,
+        label: faultLabel(f.fault_type, f.hand),
+        initials: faultInitials(f.fault_type, f.hand),
+        visual: faultVisual(f.fault_type, f.hand),
+        count: 0,
+        totalMs: 0,
+      };
     }
     summary[key].count++;
     summary[key].totalMs += f.value || 0;
   }
+  const summaryItems = Object.values(summary);
+  const totalSignificantMs = summaryItems.reduce((sum, item) => sum + item.totalMs, 0);
+  const hasSummarySelection = selectedFaultKeys.size > 0;
 
   function toggleFaultKey(key) {
     setSelectedFaultKeys((current) => {
@@ -406,6 +359,11 @@ export default function SessionDetail() {
       }
       return next;
     });
+  }
+
+  function focusSummaryCard(key) {
+    toggleFaultKey(key);
+    setShowDetailed(true);
   }
 
   return (
@@ -423,29 +381,108 @@ export default function SessionDetail() {
       {/* Summary cards — only sustained faults (>0.5s) */}
       {Object.keys(summary).length > 0 ? (
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 24 }}>
-          {Object.values(summary).map((s) => (
+          {summaryItems.map((s) => {
+            const isSelected = selectedFaultKeys.has(s.key);
+            const isDimmed = hasSummarySelection && !isSelected;
+            const share = totalSignificantMs > 0 ? s.totalMs / totalSignificantMs : 0;
+            const averageMs = s.count > 0 ? s.totalMs / s.count : 0;
+
+            return (
             <div
-              key={s.label}
+              key={s.key}
+              role="button"
+              tabIndex={0}
+              aria-pressed={isSelected}
+              onClick={() => focusSummaryCard(s.key)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  focusSummaryCard(s.key);
+                }
+              }}
               style={{
                 background: "#fff",
                 border: `2px ${s.visual.borderStyle} ${s.visual.accent}`,
                 borderRadius: 8,
-                padding: "10px 18px",
-                minWidth: 140,
+                padding: "12px 16px",
+                minWidth: 180,
+                textAlign: "left",
+                cursor: "pointer",
+                font: "inherit",
+                color: "inherit",
+                opacity: isDimmed ? 0.45 : 1,
+                transform: isSelected ? "translateY(-2px)" : "none",
+                boxShadow: isSelected ? "0 8px 20px rgba(0, 0, 0, 0.12)" : "none",
+                transition: "opacity 140ms ease, transform 140ms ease, box-shadow 140ms ease",
               }}
             >
-              <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 13, color: "#555" }}>
-                <span style={visualSwatchStyle(s.visual, 14)} />
-                {s.label}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 13, color: "#555" }}>
+                  <span style={{
+                    width: 24,
+                    height: 20,
+                    borderRadius: 5,
+                    background: "#333",
+                    color: "#fff",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: 10,
+                    fontWeight: 800,
+                    letterSpacing: 0,
+                    lineHeight: 1,
+                    flex: "0 0 auto",
+                  }}>
+                    {s.initials}
+                  </span>
+                  {s.label}
+                </div>
+                <input
+                  type="checkbox"
+                  checked={isSelected}
+                  onChange={() => focusSummaryCard(s.key)}
+                  onClick={(event) => event.stopPropagation()}
+                  aria-label={`Show only ${s.label}`}
+                  style={{
+                    width: 18,
+                    height: 18,
+                    margin: 0,
+                    accentColor: "#555",
+                    cursor: "pointer",
+                    flex: "0 0 auto",
+                  }}
+                />
               </div>
-              <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginTop: 4 }}>
+
+              <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginTop: 8 }}>
                 <span style={{ fontSize: 28, fontWeight: 700, color: s.visual.accent }}>{s.count}</span>
                 <span style={{ fontSize: 13, color: "#888" }}>
                   {(s.totalMs / 1000).toFixed(1)}s total
                 </span>
               </div>
+
+              <div style={{
+                height: 6,
+                background: "#eee",
+                borderRadius: 999,
+                overflow: "hidden",
+                marginTop: 9,
+              }}>
+                <div style={{
+                  width: `${Math.max(3, Math.round(share * 100))}%`,
+                  height: "100%",
+                  background: s.visual.accent,
+                  borderRadius: 999,
+                }} />
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginTop: 7, color: "#777", fontSize: 12 }}>
+                <span>{Math.round(share * 100)}% of fault time</span>
+                <span>{(averageMs / 1000).toFixed(1)}s avg</span>
+              </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       ) : (
         <p style={{ color: "#888", marginBottom: 24 }}>No significant faults ({">"} 0.5s) — nice session!</p>
@@ -475,7 +512,6 @@ export default function SessionDetail() {
 
           {showDetailed && (
             <div style={{ border: "1px solid #eee", borderRadius: 8, padding: 16, background: "#fafafa" }}>
-              <Legend faults={allFaults} selectedKeys={selectedFaultKeys} onToggle={toggleFaultKey} />
               <Timeline faults={visibleFaults} sessionDurationMs={sessionDurationMs} timeOrigin={timeOrigin} />
               <p style={{ fontSize: 12, color: "#999", marginTop: 8, marginBottom: 0 }}>
                 Solid bars = sustained faults ({">"} 0.5s). Faded bars = brief blips ({"<"} 0.5s).
