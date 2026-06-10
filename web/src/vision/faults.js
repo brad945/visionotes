@@ -140,6 +140,17 @@ export class FaultSmoother {
     return result;
   }
 
+  /** Return completed periods plus currently-open periods with live duration. */
+  snapshot(nowMs) {
+    const open = Object.values(this.openPeriods).map((period) => ({
+      fault_type: period.fault_type,
+      hand: period.hand,
+      timestamp_ms: period.start_ms,
+      value: Math.max(0, nowMs - period.start_ms),
+    }));
+    return [...this.periods, ...open];
+  }
+
   clear() {
     this.buffers = {};
     this.prev = {};

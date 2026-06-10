@@ -33,6 +33,7 @@ export default function useVision(videoRef, canvasRef) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [faults, setFaults] = useState([]); // current active fault labels
+  const [liveEvents, setLiveEvents] = useState([]);
   const [stats, setStats] = useState({ fps: 0, width: 0, height: 0 });
 
   // Mutable refs that persist across renders without re-triggering them
@@ -184,6 +185,10 @@ export default function useVision(videoRef, canvasRef) {
     if (frameNow - lastStateUpdateRef.current > 250) {
       lastStateUpdateRef.current = frameNow;
       setFaults(activeFaults);
+      setLiveEvents([
+        ...wristSmootherRef.current.snapshot(lastTsRef.current),
+        ...armSmootherRef.current.snapshot(lastTsRef.current),
+      ]);
       setStats({ fps, width: w, height: h });
     }
     rafIdRef.current = requestAnimationFrame(detectLoop);
@@ -198,6 +203,7 @@ export default function useVision(videoRef, canvasRef) {
     armSmootherRef.current.clear();
     fpsFramesRef.current = [];
     lastTsRef.current = 0;
+    setLiveEvents([]);
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -229,6 +235,7 @@ export default function useVision(videoRef, canvasRef) {
       videoRef.current.srcObject = null;
     }
     setFaults([]);
+    setLiveEvents([]);
 
     // Finalize any still-open fault periods and harvest all periods
     const endMs = lastTsRef.current;
@@ -253,5 +260,5 @@ export default function useVision(videoRef, canvasRef) {
     };
   }, []);
 
-  return { isLoading, error, faults, stats, start, stop };
+  return { isLoading, error, faults, liveEvents, stats, start, stop };
 }
