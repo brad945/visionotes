@@ -2,6 +2,15 @@ import { useRef, useState } from "react";
 import useVision from "../vision/useVision";
 import { startSession, endSession, postFaults } from "../api";
 
+const SIGNIFICANT_THRESHOLD_MS = 500;
+const LIVE_WINDOW_MS = 30_000;
+const FEEDBACK_LANES = [
+  { key: "left_arm_posture", hand: "left", fault_type: "arm_posture" },
+  { key: "left_collapsed_wrist", hand: "left", fault_type: "collapsed_wrist" },
+  { key: "right_arm_posture", hand: "right", fault_type: "arm_posture" },
+  { key: "right_collapsed_wrist", hand: "right", fault_type: "collapsed_wrist" },
+];
+
 export default function Practice() {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
@@ -24,24 +33,6 @@ export default function Practice() {
       console.error("Failed to start session:", e);
     }
   };
-
-  const significantLiveEvents = liveEvents.filter((event) => (event.value || 0) >= 500);
-  const liveSummary = significantLiveEvents.reduce((summary, event) => {
-    const key = `${event.hand ?? ""}_${event.fault_type}`;
-    if (!summary[key]) {
-      summary[key] = {
-        label: faultLabel(event.fault_type, event.hand),
-        initials: faultInitials(event.fault_type, event.hand),
-        count: 0,
-        totalMs: 0,
-      };
-    }
-    summary[key].count++;
-    summary[key].totalMs += event.value || 0;
-    return summary;
-  }, {});
-  const liveSummaryItems = Object.values(liveSummary);
-  const totalLiveFaultMs = liveSummaryItems.reduce((sum, item) => sum + item.totalMs, 0);
 
   const handleStop = async () => {
     const events = stop();
@@ -106,89 +97,7 @@ export default function Practice() {
       )}
 
       {liveFeedbackEnabled && (
-        <section style={{ marginBottom: 16 }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, marginBottom: 10 }}>
-            <h2 style={{ margin: 0, fontSize: 18 }}>Live Feedback</h2>
-            <span style={{ color: "#777", fontSize: 13 }}>
-              {running ? `${significantLiveEvents.length} sustained event${significantLiveEvents.length !== 1 ? "s" : ""}` : "Start a session to collect feedback"}
-            </span>
-          </div>
-
-          {running && liveSummaryItems.length > 0 ? (
-            <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-              {liveSummaryItems.map((item) => {
-                const share = totalLiveFaultMs > 0 ? item.totalMs / totalLiveFaultMs : 0;
-                const averageMs = item.count > 0 ? item.totalMs / item.count : 0;
-
-                return (
-                  <div
-                    key={item.label}
-                    style={{
-                      background: "#fff",
-                      border: "2px solid #333",
-                      borderRadius: 8,
-                      padding: "12px 16px",
-                      minWidth: 180,
-                    }}
-                  >
-                    <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 13, color: "#555" }}>
-                      <span style={{
-                        width: 24,
-                        height: 20,
-                        borderRadius: 5,
-                        background: "#333",
-                        color: "#fff",
-                        display: "inline-flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        fontSize: 10,
-                        fontWeight: 800,
-                        letterSpacing: 0,
-                        lineHeight: 1,
-                        flex: "0 0 auto",
-                      }}>
-                        {item.initials}
-                      </span>
-                      {item.label}
-                    </div>
-
-                    <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginTop: 8 }}>
-                      <span style={{ fontSize: 28, fontWeight: 700, color: "#333" }}>{item.count}</span>
-                      <span style={{ fontSize: 13, color: "#888" }}>
-                        {(item.totalMs / 1000).toFixed(1)}s total
-                      </span>
-                    </div>
-
-                    <div style={{ height: 6, background: "#eee", borderRadius: 999, overflow: "hidden", marginTop: 9 }}>
-                      <div style={{
-                        width: `${Math.max(3, Math.round(share * 100))}%`,
-                        height: "100%",
-                        background: "#333",
-                        borderRadius: 999,
-                      }} />
-                    </div>
-
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginTop: 7, color: "#777", fontSize: 12 }}>
-                      <span>{Math.round(share * 100)}% of fault time</span>
-                      <span>{(averageMs / 1000).toFixed(1)}s avg</span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <div style={{
-              border: "1px solid #e5e5e5",
-              borderRadius: 8,
-              background: "#fafafa",
-              color: "#777",
-              padding: "14px 16px",
-              fontSize: 14,
-            }}>
-              {running ? "No sustained feedback yet. Brief blips under 0.5s stay out of this summary." : "Start a session and sustained posture notes will appear here in real time."}
-            </div>
-          )}
-        </section>
+        <LiveFeedbackPanel running={running} events={liveEvents} />
       )}
 
       {/* Fault labels */}
@@ -245,6 +154,198 @@ export default function Practice() {
   );
 }
 
+function LiveFeedbackPanel({ running, events }) {
+  const nowMs = events.reduce((latest, event) => (
+    Math.max(latest, event.timestamp_ms + (event.value || 0))
+  ), 0);
+  const windowStart = Math.max(0, nowMs - LIVE_WINDOW_MS);
+  const significantEvents = events.filter((event) => (event.value || 0) >= SIGNIFICANT_THRESHOLD_MS);
+  const activeKeys = new Set(
+    significantEvents
+      .filter((event) => nowMs > 0 && Math.abs((event.timestamp_ms + (event.value || 0)) - nowMs) < 350)
+      .map((event) => faultKey(event))
+  );
+  const totalLiveMs = significantEvents.reduce((sum, event) => sum + (event.value || 0), 0);
+
+  return (
+    <section style={{ marginBottom: 16 }}>
+      <style>{`
+        @keyframes livePulse {
+          0%, 100% { transform: scale(1); opacity: 1; }
+          50% { transform: scale(1.28); opacity: 0.55; }
+        }
+      `}</style>
+      <div style={{
+        border: "1px solid #e5e5e5",
+        borderRadius: 8,
+        background: "#fff",
+        overflow: "hidden",
+      }}>
+        <div style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 16,
+          padding: "12px 14px",
+          borderBottom: "1px solid #eee",
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+            <span style={{
+              width: 8,
+              height: 8,
+              borderRadius: "50%",
+              background: running ? "#333" : "#aaa",
+              animation: running ? "livePulse 1.2s ease-in-out infinite" : "none",
+              flex: "0 0 auto",
+            }} />
+            <h2 style={{ margin: 0, fontSize: 18 }}>Live Feedback</h2>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 14, color: "#777", fontSize: 13 }}>
+            <span>{running ? "Last 30s" : "Paused"}</span>
+            <strong style={{ color: "#333" }}>{formatLiveTime(totalLiveMs)} total</strong>
+          </div>
+        </div>
+
+        {running ? (
+          <div style={{ padding: "12px 14px 14px" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "148px minmax(220px, 1fr) 72px", gap: 10, alignItems: "center" }}>
+              {FEEDBACK_LANES.map((lane) => {
+                const laneEvents = significantEvents.filter((event) => faultKey(event) === lane.key);
+                const laneTotalMs = laneEvents.reduce((sum, event) => sum + (event.value || 0), 0);
+                const isActive = activeKeys.has(lane.key);
+
+                return (
+                  <LiveFeedbackLane
+                    key={lane.key}
+                    lane={lane}
+                    events={laneEvents}
+                    nowMs={nowMs}
+                    windowStart={windowStart}
+                    totalMs={laneTotalMs}
+                    active={isActive}
+                  />
+                );
+              })}
+            </div>
+            {significantEvents.length === 0 && (
+              <div style={{ color: "#777", fontSize: 13, marginTop: 10 }}>
+                No sustained feedback yet. Brief blips under 0.5s stay out of this monitor.
+              </div>
+            )}
+          </div>
+        ) : (
+          <div style={{ color: "#777", padding: "14px 16px", fontSize: 14 }}>
+            Start a session and sustained posture notes will stream here.
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function LiveFeedbackLane({ lane, events, nowMs, windowStart, totalMs, active }) {
+  const windowDuration = Math.max(1, nowMs - windowStart || LIVE_WINDOW_MS);
+
+  return (
+    <>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+        <InitialsBadge>{faultInitials(lane.fault_type, lane.hand)}</InitialsBadge>
+        <span style={{
+          color: active ? "#222" : "#666",
+          fontSize: 13,
+          fontWeight: active ? 700 : 500,
+          whiteSpace: "nowrap",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+        }}>
+          {faultLabel(lane.fault_type, lane.hand)}
+        </span>
+      </div>
+      <div style={{
+        position: "relative",
+        height: 28,
+        background: "#f7f7f7",
+        border: "1px solid #e8e8e8",
+        borderRadius: 6,
+        overflow: "hidden",
+      }}>
+        {[0, 1, 2, 3].map((tick) => (
+          <span
+            key={tick}
+            style={{
+              position: "absolute",
+              left: `${(tick / 3) * 100}%`,
+              top: 0,
+              bottom: 0,
+              width: 1,
+              background: tick === 3 ? "#bbb" : "#e2e2e2",
+            }}
+          />
+        ))}
+        {events.map((event, index) => {
+          const eventStart = Math.max(event.timestamp_ms, windowStart);
+          const eventEnd = Math.min(event.timestamp_ms + (event.value || 0), nowMs || LIVE_WINDOW_MS);
+          const left = ((eventStart - windowStart) / windowDuration) * 100;
+          const width = Math.max(1.5, ((eventEnd - eventStart) / windowDuration) * 100);
+          const isLatest = active && index === events.length - 1;
+
+          return (
+            <span
+              key={`${event.timestamp_ms}-${index}`}
+              title={`${faultLabel(event.fault_type, event.hand)}: ${formatLiveTime(event.value || 0)}`}
+              style={{
+                position: "absolute",
+                left: `${Math.max(0, Math.min(100, left))}%`,
+                width: `${Math.max(1.5, Math.min(100, width))}%`,
+                top: 6,
+                bottom: 6,
+                borderRadius: 999,
+                background: "#333",
+                opacity: isLatest ? 1 : 0.72,
+                boxShadow: isLatest ? "0 0 0 3px rgba(0, 0, 0, 0.12)" : "none",
+                transition: "left 180ms linear, width 180ms linear",
+              }}
+            />
+          );
+        })}
+        <span style={{
+          position: "absolute",
+          right: 0,
+          top: 0,
+          bottom: 0,
+          width: 2,
+          background: "#333",
+        }} />
+      </div>
+      <div style={{ color: active ? "#222" : "#777", fontSize: 12, fontWeight: active ? 700 : 500, textAlign: "right" }}>
+        {formatLiveTime(totalMs)}
+      </div>
+    </>
+  );
+}
+
+function InitialsBadge({ children }) {
+  return (
+    <span style={{
+      width: 24,
+      height: 20,
+      borderRadius: 5,
+      background: "#333",
+      color: "#fff",
+      display: "inline-flex",
+      alignItems: "center",
+      justifyContent: "center",
+      fontSize: 10,
+      fontWeight: 800,
+      letterSpacing: 0,
+      lineHeight: 1,
+      flex: "0 0 auto",
+    }}>
+      {children}
+    </span>
+  );
+}
+
 function faultLabel(type, hand) {
   const t = type === "collapsed_wrist" ? "Wrist Collapsed" : "Arm Posture";
   const h = hand ? hand.charAt(0).toUpperCase() + hand.slice(1) : "";
@@ -255,4 +356,12 @@ function faultInitials(type, hand) {
   const handInitial = hand?.charAt(0).toUpperCase() ?? "";
   const typeInitial = type === "collapsed_wrist" ? "W" : "A";
   return `${handInitial}${typeInitial}`;
+}
+
+function faultKey(event) {
+  return `${event.hand ?? ""}_${event.fault_type}`;
+}
+
+function formatLiveTime(ms) {
+  return `${(ms / 1000).toFixed(1)}s`;
 }
