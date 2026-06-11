@@ -12,7 +12,7 @@ export default function App() {
 
   if (loading) {
     return (
-      <div style={{ fontFamily: "system-ui, sans-serif", padding: 64, textAlign: "center" }}>
+      <div className="vn-muted" style={{ padding: 64, textAlign: "center" }}>
         Loading…
       </div>
     );
@@ -20,14 +20,14 @@ export default function App() {
 
   if (!user) {
     return (
-      <div style={{ fontFamily: "system-ui, sans-serif", maxWidth: 960, margin: "0 auto", padding: "0 16px" }}>
+      <div className="vn-page">
         <Login />
       </div>
     );
   }
 
   return (
-    <div style={{ fontFamily: "system-ui, sans-serif", maxWidth: 960, margin: "0 auto", padding: "0 16px" }}>
+    <div className="vn-page">
       <Navbar />
       <Routes>
         <Route path="/" element={<Practice />} />

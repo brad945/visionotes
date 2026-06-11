@@ -1,0 +1,197 @@
+/* VisioNotes base + component utilities.
+   Deliberately scoped: NO global rules on canvas/video/img sizing
+   (the Practice video+canvas overlay relies on its own inline width/height/transform). */
+
+@import "./tokens.css";
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 0.95rem;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Typography roles */
+h1,
+h2,
+h3 {
+  color: var(--ink);
+  margin: 0;
+}
+h1 {
+  font-size: clamp(1.9rem, 1.4rem + 1.8vw, 2.5rem);
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+h2 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+}
+h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+p {
+  margin: 0;
+}
+
+a {
+  color: var(--accent-deep);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
+
+/* Always-visible focus — never removed (a11y). */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+::selection {
+  background: var(--accent-soft);
+}
+
+/* ---- Utilities ---- */
+
+.vn-page {
+  max-width: var(--page-max);
+  margin: 0 auto;
+  padding: 0 var(--s-lg);
+}
+
+.vn-muted {
+  color: var(--ink-muted);
+}
+
+/* Mono numeric readouts — the instrument tell (Mono-Numbers Rule). */
+.vn-data {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Mono uppercase eyebrow / caption. */
+.vn-label {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+
+/* Buttons */
+.vn-btn {
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  font-weight: 500;
+  line-height: 1.2;
+  border: 1px solid transparent;
+  border-radius: var(--r-md);
+  padding: 8px 20px;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+}
+.vn-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.vn-btn--primary {
+  background: var(--accent);
+  color: var(--surface);
+}
+.vn-btn--primary:not(:disabled):hover {
+  background: var(--accent-deep);
+}
+.vn-btn--stop {
+  background: var(--signal);
+  color: var(--surface);
+}
+.vn-btn--stop:not(:disabled):hover {
+  background: var(--signal-deep);
+}
+.vn-btn--ghost {
+  background: var(--surface);
+  color: var(--ink);
+  border-color: var(--line-strong);
+  padding: 6px 12px;
+  font-size: 0.875rem;
+}
+.vn-btn--ghost:not(:disabled):hover {
+  border-color: var(--ink-muted);
+}
+
+/* Inputs */
+.vn-input {
+  width: 100%;
+  font-family: var(--font-sans);
+  font-size: 16px;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  padding: 10px 12px;
+  transition: border-color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
+}
+.vn-input::placeholder {
+  color: var(--ink-muted);
+}
+.vn-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+/* Cards / panels */
+.vn-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  padding: var(--s-lg);
+}
+
+/* Fault badge — Clay, paired with text (never color alone). */
+.vn-badge-fault {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--signal);
+  color: var(--surface);
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border-radius: var(--r-sm);
+}
+
+/* Accent checkbox/control tint */
+.vn-accent-control {
+  accent-color: var(--accent);
+}

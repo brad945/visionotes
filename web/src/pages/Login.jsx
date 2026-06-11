@@ -19,16 +19,23 @@ export default function Login() {
 
   if (submitted) {
     return (
-      <main style={{ padding: "64px 0", textAlign: "center" }}>
+      <main style={{ padding: "96px 0", textAlign: "center", maxWidth: 420, margin: "0 auto" }}>
+        <p className="vn-label" style={{ marginBottom: 12 }}>Magic link sent</p>
         <h1>Check your email</h1>
-        <p>We sent a magic link to <strong>{email}</strong>. Click it to log in.</p>
+        <p className="vn-muted" style={{ marginTop: 12 }}>
+          We sent a magic link to <strong style={{ color: "var(--ink)" }}>{email}</strong>. Click it to log in.
+        </p>
       </main>
     );
   }
 
   return (
-    <main style={{ padding: "64px 0", maxWidth: 360, margin: "0 auto" }}>
-      <h1>Log in to VisioNotes</h1>
+    <main style={{ padding: "96px 0", maxWidth: 360, margin: "0 auto" }}>
+      <p className="vn-label" style={{ marginBottom: 12 }}>VisioNotes</p>
+      <h1>Log in</h1>
+      <p className="vn-muted" style={{ margin: "8px 0 24px" }}>
+        Enter your email and we'll send you a one-tap magic link.
+      </p>
       <form onSubmit={handleLogin}>
         <input
           type="email"
@@ -36,33 +43,15 @@ export default function Login() {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           required
-          style={{
-            width: "100%",
-            padding: "10px 12px",
-            fontSize: 16,
-            borderRadius: 6,
-            border: "1px solid #ccc",
-            boxSizing: "border-box",
-          }}
+          className="vn-input"
         />
-        <button
-          type="submit"
-          style={{
-            marginTop: 12,
-            width: "100%",
-            padding: "10px",
-            fontSize: 16,
-            borderRadius: 6,
-            border: "none",
-            background: "#0066cc",
-            color: "#fff",
-            cursor: "pointer",
-          }}
-        >
+        <button type="submit" className="vn-btn vn-btn--primary" style={{ marginTop: 12, width: "100%" }}>
           Send magic link
         </button>
       </form>
-      {error && <p style={{ color: "red", marginTop: 12 }}>{error}</p>}
+      {error && (
+        <p style={{ color: "var(--signal-deep)", marginTop: 12, fontSize: "0.875rem" }}>{error}</p>
+      )}
     </main>
   );
 }

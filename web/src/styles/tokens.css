@@ -1,0 +1,63 @@
+/* VisioNotes design tokens — single source of truth.
+   Mirrors DESIGN.md frontmatter. Canvas/SVG read these via getComputedStyle(:root). */
+
+:root {
+  /* Color — Neutral */
+  --paper: #f7f8f8;
+  --surface: #ffffff;
+  --surface-sunken: #eef1f1;
+  --ink: #16191b;
+  --ink-muted: #565c61;
+  --line: #dde1e1;
+  --line-strong: #c4c9c9;
+
+  /* Color — Accent (Needle Teal). One Voice Rule: ≤10% of any screen. */
+  --accent: #0e7c86;
+  --accent-deep: #0a5c64; /* small text on light */
+  --accent-soft: #e1eff0;
+
+  /* Color — Signal (Clay). Faults + Stop only. */
+  --signal: #c2410c;
+  --signal-deep: #9a330a;
+  --signal-soft: #fbeadf;
+
+  /* Color — Progress (Green). Improvement only. */
+  --positive: #15803d;
+  --positive-deep: #11652f;
+
+  /* Typography */
+  --font-sans: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* Radius */
+  --r-sm: 4px;
+  --r-md: 6px;
+  --r-lg: 8px;
+  --r-xl: 12px;
+  --r-pill: 999px;
+
+  /* Spacing (4px base) */
+  --s-xs: 4px;
+  --s-sm: 8px;
+  --s-md: 12px;
+  --s-lg: 16px;
+  --s-xl: 24px;
+  --s-2xl: 32px;
+  --s-3xl: 48px;
+
+  /* Elevation — Flat-By-Default. Lift is a response to state only. */
+  --shadow-lift: 0 1px 2px rgba(16, 25, 28, 0.04), 0 10px 24px -14px rgba(16, 25, 28, 0.22);
+
+  /* Motion — restrained */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --dur-fast: 120ms;
+  --dur: 180ms;
+
+  /* Z-index scale */
+  --z-sticky: 100;
+  --z-overlay: 200;
+  --z-toast: 300;
+
+  /* Layout */
+  --page-max: 960px;
+}
