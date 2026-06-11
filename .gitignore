@@ -18,6 +18,10 @@ dist/
 # Editor
 .vscode/
 
+# Local-only Claude Code skills/tooling (not part of the app)
+.claude/
+.impeccable/
+
 # Secrets / environment variables (NEVER commit)
 .env
 .env.*
