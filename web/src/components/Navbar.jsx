@@ -16,6 +16,7 @@ export default function Navbar() {
       <span style={{ fontWeight: 700, fontSize: 20, marginRight: "auto" }}>VisioNotes</span>
       <NavLink to="/" style={linkStyle} end>Practice</NavLink>
       <NavLink to="/history" style={linkStyle}>History</NavLink>
+      <NavLink to="/visualize" style={linkStyle}>Visualize</NavLink>
       {user && (
         <button
           onClick={() => supabase.auth.signOut()}

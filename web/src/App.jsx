@@ -5,6 +5,7 @@ import Login from "./pages/Login";
 import Practice from "./pages/Practice";
 import History from "./pages/History";
 import SessionDetail from "./pages/SessionDetail";
+import Visualize from "./pages/Visualize";
 
 export default function App() {
   const { user, loading } = useAuth();
@@ -32,6 +33,7 @@ export default function App() {
         <Route path="/" element={<Practice />} />
         <Route path="/history" element={<History />} />
         <Route path="/history/:sessionId" element={<SessionDetail />} />
+        <Route path="/visualize" element={<Visualize />} />
       </Routes>
     </div>
   );
