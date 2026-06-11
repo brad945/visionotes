@@ -9,9 +9,9 @@ colors:
   ink-muted: "#565C61"
   line: "#DDE1E1"
   line-strong: "#C4C9C9"
-  accent: "#0E7C86"
-  accent-deep: "#0A5C64"
-  accent-soft: "#E1EFF0"
+  accent: "#2B5CE6"
+  accent-deep: "#1E47C0"
+  accent-soft: "#E7EDFB"
   signal: "#C2410C"
   signal-deep: "#9A330A"
   signal-soft: "#FBEADF"
@@ -107,23 +107,23 @@ components:
 
 VisioNotes should feel like a precision instrument for technique — a tuner, a studio meter, a measurement tool — not an app fighting for attention. The pianist is mid-practice with their hands on the keys; the screen is peripheral, glanced at between phrases. So the system is quiet by default and exact when it speaks. Calm surfaces, hairline structure, and a single disciplined accent. Numbers — timers, durations, fault counts, pace — are set in mono, because an instrument reads out values, it doesn't decorate them.
 
-The palette is a cool near-neutral paper with a deep teal needle and a measured clay warning. Restraint is the whole point: the quiet state is the normal state, and the accent earns its rarity. When a fault appears it is plainly legible, never alarming — a serious, matter-of-fact signal, not a flashing alert.
+The palette is a cool near-neutral paper with a deep blue needle and a measured clay warning. Restraint is the whole point: the quiet state is the normal state, and the accent earns its rarity. When a fault appears it is plainly legible, never alarming — a serious, matter-of-fact signal, not a flashing alert.
 
 This system explicitly **rejects** three looks named in `PRODUCT.md`: the **generic AI-SaaS** template (Inter + purple→blue gradients + rounded cards everywhere), the **enterprise dashboard** (gray-on-gray density and chart-junk), and the **gamified consumer app** (mascots, confetti, badges, bounce). VisioNotes is a serious tool a serious player would trust.
 
 **Key Characteristics:**
 - Cool, calm paper surfaces — flat by default, structured with hairlines, not boxes-in-boxes.
-- One teal accent, used on ≤10% of any screen; clay reserved strictly for faults.
+- One blue accent, used on ≤10% of any screen; clay reserved strictly for faults.
 - All numeric readouts in IBM Plex Mono — the instrument tell.
 - Motion is restrained and always has a reduced-motion fallback.
 - AA contrast everywhere, muted text included.
 
 ## 2. Colors
 
-A cool near-neutral foundation with one teal accent and one clay signal — low chroma, high discipline.
+A cool near-neutral foundation with one blue accent and one clay signal — low chroma, high discipline.
 
 ### Primary
-- **Needle Teal** (#0E7C86): The instrument's one voice. Primary actions (Start), active states, focus rings, the live recording needle, links. Used sparingly. For body-size text on white, shift to **Needle Teal Deep** (#0A5C64) to hold AA. **Teal Mist** (#E1EFF0) is the only tint, for selected/active backgrounds.
+- **Needle Blue** (#2B5CE6): The instrument's one voice. Primary actions (Start), active states, focus rings, the live recording needle, links. Used sparingly. For body-size text on white, shift to **Needle Blue Deep** (#1E47C0) to hold AA. **Blue Mist** (#E7EDFB) is the only tint, for selected/active backgrounds.
 
 ### Secondary
 - **Signal Clay** (#C2410C): Faults and only faults. Fault badges, active fault markers, the Stop control. White text on Clay clears AA (≈4.7:1). **Clay Deep** (#9A330A) for hover; **Clay Mist** (#FBEADF) for soft fault backgrounds.
@@ -140,7 +140,7 @@ A cool near-neutral foundation with one teal accent and one clay signal — low 
 - **Line** (#DDE1E1) / **Line Strong** (#C4C9C9): Hairline dividers and borders.
 
 ### Named Rules
-**The One Voice Rule.** Needle Teal appears on ≤10% of any screen. Its rarity is what makes the active state read instantly. If two things are teal, one of them is wrong.
+**The One Voice Rule.** Needle Blue appears on ≤10% of any screen. Its rarity is what makes the active state read instantly. If two things are blue, one of them is wrong.
 
 **The Clay-Means-Fault Rule.** Signal Clay is reserved exclusively for posture faults and the Stop control. Never use it for emphasis, decoration, or generic "danger." When a player sees clay, it means one thing.
 
@@ -176,9 +176,9 @@ Flat by default. Depth comes from tonal layering (Paper → Surface → Surface 
 
 ### Buttons
 - **Shape:** Gently rounded (6px, `rounded.md`).
-- **Primary:** Needle Teal fill, white text, padding 8px 20px. The Start action and primary CTAs.
+- **Primary:** Needle Blue fill, white text, padding 8px 20px. The Start action and primary CTAs.
 - **Stop:** Signal Clay fill, white text — the only place Clay appears as an action, semantically "end / active."
-- **Hover / Focus:** Background shifts to the -deep variant; 120ms ease-out. Focus shows a 2px Needle Teal ring with 2px offset — always visible, never removed.
+- **Hover / Focus:** Background shifts to the -deep variant; 120ms ease-out. Focus shows a 2px Needle Blue ring with 2px offset — always visible, never removed.
 - **Ghost:** Surface background, Ink text, 1px Line border. Secondary actions (Log out, toggles).
 
 ### Chips / Badges
@@ -189,26 +189,26 @@ Flat by default. Depth comes from tonal layering (Paper → Surface → Surface 
 - **Corner Style:** 8px (`rounded.lg`).
 - **Background:** Surface (#FFFFFF) on Paper.
 - **Shadow Strategy:** None at rest (see Elevation). Lift only on hover/selected.
-- **Border:** 1px Line. Selected state: 1px Needle Teal (not a heavy 2px stripe).
+- **Border:** 1px Line. Selected state: 1px Needle Blue (not a heavy 2px stripe).
 - **Internal Padding:** 16px (`spacing.lg`); roomy panels 24px.
 
 ### Inputs / Fields
 - **Style:** Surface background, 1px Line border, 6px radius, 10px 12px padding, 16px text (no mobile zoom).
-- **Focus:** Border shifts to Needle Teal + 2px Teal ring. No glow.
+- **Focus:** Border shifts to Needle Blue + 2px Blue ring. No glow.
 - **Error:** Border and helper text in Signal Clay.
 
 ### Navigation
 - **Style:** Top bar, wordmark left, links right, 1px Line underline. Plex Sans.
-- **States:** Default Ink Muted; hover Ink; active Ink at 600 weight with a 2px Needle Teal underline. Mobile: links wrap, wordmark holds.
+- **States:** Default Ink Muted; hover Ink; active Ink at 600 weight with a 2px Needle Blue underline. Mobile: links wrap, wordmark holds.
 
 ### Live Feedback Monitor (signature component)
-The Practice screen's rolling 30s monitor. Surface panel, hairline header, four fixed lanes. Lane tracks are Surface Sunken; event bars are Ink at rest, the latest active bar lifts to Needle Teal. A recording dot pulses Teal while live (reduced-motion: static dot). Sustained-fault durations read in Mono. This component is where "calm instrument" is most visible — keep it quiet until there's something to show.
+The Practice screen's rolling 30s monitor. Surface panel, hairline header, four fixed lanes. Lane tracks are Surface Sunken; event bars are Ink at rest, the latest active bar lifts to Needle Blue. A recording dot pulses Blue while live (reduced-motion: static dot). Sustained-fault durations read in Mono. This component is where "calm instrument" is most visible — keep it quiet until there's something to show.
 
 ## 6. Do's and Don'ts
 
 ### Do:
 - **Do** set every measured value (time, count, rate, duration) in IBM Plex Mono — the Mono-Numbers Rule.
-- **Do** keep Needle Teal to ≤10% of a screen; let the accent stay rare and meaningful.
+- **Do** keep Needle Blue to ≤10% of a screen; let the accent stay rare and meaningful.
 - **Do** separate surfaces with a 1px Line and tonal layering before reaching for a shadow.
 - **Do** hold all text — muted included — to AA (4.5:1 body, 3:1 large); use the -deep color variants for small accent/signal/green text.
 - **Do** give every animation a `prefers-reduced-motion: reduce` fallback; the camera feed is the only thing that should move freely.

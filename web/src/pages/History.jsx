@@ -30,34 +30,38 @@ export default function History() {
       .finally(() => setLoading(false));
   }, []);
 
-  if (loading) return <main style={{ padding: "32px 0" }}>Loading sessions…</main>;
-  if (error) return <main style={{ padding: "32px 0", color: "red" }}>Error: {error}</main>;
+  if (loading) return <main style={{ padding: "32px 0" }} className="vn-muted">Loading sessions…</main>;
+  if (error) return <main style={{ padding: "32px 0", color: "var(--signal-deep)" }}>Error: {error}</main>;
+
+  const thStyle = { padding: "10px 12px", textAlign: "left" };
+  const tdStyle = { padding: "12px 12px", verticalAlign: "middle" };
 
   return (
     <main style={{ padding: "32px 0" }}>
-      <h1>Session History</h1>
+      <p className="vn-label" style={{ marginBottom: 6 }}>History</p>
+      <h1 style={{ marginBottom: 20 }}>Session History</h1>
 
       {sessions.length === 0 ? (
-        <p style={{ color: "#888" }}>No sessions yet. Go to <Link to="/">Practice</Link> to start one.</p>
+        <p className="vn-muted">No sessions yet. Go to <Link to="/">Practice</Link> to start one.</p>
       ) : (
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 15 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.95rem" }}>
           <thead>
-            <tr style={{ borderBottom: "2px solid #ddd", textAlign: "left" }}>
-              <th style={{ padding: "8px 12px" }}>Date</th>
-              <th style={{ padding: "8px 12px" }}>Duration</th>
-              <th style={{ padding: "8px 12px" }}>Faults</th>
-              <th style={{ padding: "8px 12px" }}></th>
+            <tr style={{ borderBottom: "1px solid var(--line-strong)" }}>
+              <th className="vn-label" style={thStyle}>Date</th>
+              <th className="vn-label" style={thStyle}>Duration</th>
+              <th className="vn-label" style={thStyle}>Faults</th>
+              <th style={thStyle}></th>
             </tr>
           </thead>
           <tbody>
             {sessions.map((s) => (
-              <tr key={s.id} style={{ borderBottom: "1px solid #eee" }}>
-                <td style={{ padding: "8px 12px" }}>{formatDate(s.started_at)}</td>
-                <td style={{ padding: "8px 12px" }}>{formatDuration(s.duration_seconds)}</td>
-                <td style={{ padding: "8px 12px" }}>{s.total_faults}</td>
-                <td style={{ padding: "8px 12px" }}>
-                  <Link to={`/history/${s.id}`} style={{ color: "#0066cc" }}>
-                    View
+              <tr key={s.id} style={{ borderBottom: "1px solid var(--line)" }}>
+                <td style={tdStyle}>{formatDate(s.started_at)}</td>
+                <td style={tdStyle} className="vn-data">{formatDuration(s.duration_seconds)}</td>
+                <td style={tdStyle} className="vn-data">{s.total_faults}</td>
+                <td style={{ ...tdStyle, textAlign: "right" }}>
+                  <Link to={`/history/${s.id}`} style={{ fontWeight: 500 }}>
+                    View →
                   </Link>
                 </td>
               </tr>

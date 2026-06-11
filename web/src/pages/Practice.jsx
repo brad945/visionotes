@@ -58,20 +58,14 @@ export default function Practice() {
 
   return (
     <main style={{ padding: "32px 0" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 16 }}>
+      <p className="vn-label" style={{ marginBottom: 6 }}>Live Session</p>
+      <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 16, flexWrap: "wrap" }}>
         <h1 style={{ margin: 0 }}>Practice</h1>
         <button
           onClick={running ? handleStop : handleStart}
           disabled={isLoading || saving}
-          style={{
-            padding: "8px 20px",
-            fontSize: 16,
-            borderRadius: 6,
-            border: "none",
-            cursor: isLoading || saving ? "wait" : "pointer",
-            background: running ? "#cc3333" : "#0066cc",
-            color: "#fff",
-          }}
+          className={`vn-btn ${running ? "vn-btn--stop" : "vn-btn--primary"}`}
+          style={{ cursor: isLoading || saving ? "wait" : undefined }}
         >
           {isLoading
             ? "Loading models…"
@@ -81,19 +75,20 @@ export default function Practice() {
                 ? "Stop"
                 : "Start Session"}
         </button>
-        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, color: "#555" }}>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.875rem", color: "var(--ink-muted)" }}>
           <input
             type="checkbox"
             checked={liveFeedbackEnabled}
             onChange={(event) => setLiveFeedbackEnabled(event.target.checked)}
-            style={{ width: 16, height: 16, margin: 0, accentColor: "#555" }}
+            className="vn-accent-control"
+            style={{ width: 16, height: 16, margin: 0 }}
           />
           Enable live feedback
         </label>
       </div>
 
       {error && (
-        <p style={{ color: "red", fontWeight: 600 }}>{error}</p>
+        <p style={{ color: "var(--signal-deep)", fontWeight: 600 }}>{error}</p>
       )}
 
       {liveFeedbackEnabled && (
@@ -102,22 +97,9 @@ export default function Practice() {
 
       {/* Fault labels */}
       {faults.length > 0 && (
-        <div style={{ marginBottom: 12 }}>
+        <div style={{ marginBottom: 12, display: "flex", flexWrap: "wrap", gap: 8 }}>
           {faults.map((f, i) => (
-            <span
-              key={i}
-              style={{
-                display: "inline-block",
-                background: "#ff3333",
-                color: "#fff",
-                padding: "4px 12px",
-                borderRadius: 4,
-                marginRight: 8,
-                fontSize: 14,
-                fontWeight: 600,
-                textTransform: "uppercase",
-              }}
-            >
+            <span key={i} className="vn-badge-fault">
               {f}
             </span>
           ))}
@@ -125,7 +107,7 @@ export default function Practice() {
       )}
 
       {/* Video + canvas overlay */}
-      <div style={{ position: "relative", display: "inline-block", background: "#000", borderRadius: 8, overflow: "hidden" }}>
+      <div style={{ position: "relative", display: "inline-block", background: "#000", borderRadius: "var(--r-lg)", overflow: "hidden" }}>
         <video
           ref={videoRef}
           style={{ display: "block", maxWidth: "100%", transform: "scaleX(-1)" }}
@@ -146,8 +128,8 @@ export default function Practice() {
       </div>
 
       {!running && !isLoading && !saving && (
-        <p style={{ color: "#888", marginTop: 12 }}>
-          Press <strong>Start Session</strong> to begin webcam posture tracking.
+        <p className="vn-muted" style={{ marginTop: 12 }}>
+          Press <strong style={{ color: "var(--ink)" }}>Start Session</strong> to begin webcam posture tracking.
         </p>
       )}
     </main>
@@ -174,11 +156,14 @@ function LiveFeedbackPanel({ running, events }) {
           0%, 100% { transform: scale(1); opacity: 1; }
           50% { transform: scale(1.28); opacity: 0.55; }
         }
+        @media (prefers-reduced-motion: reduce) {
+          .vn-live-dot { animation: none !important; }
+        }
       `}</style>
       <div style={{
-        border: "1px solid #e5e5e5",
-        borderRadius: 8,
-        background: "#fff",
+        border: "1px solid var(--line)",
+        borderRadius: "var(--r-lg)",
+        background: "var(--surface)",
         overflow: "hidden",
       }}>
         <div style={{
@@ -187,22 +172,22 @@ function LiveFeedbackPanel({ running, events }) {
           justifyContent: "space-between",
           gap: 16,
           padding: "12px 14px",
-          borderBottom: "1px solid #eee",
+          borderBottom: "1px solid var(--line)",
         }}>
           <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-            <span style={{
+            <span className="vn-live-dot" style={{
               width: 8,
               height: 8,
               borderRadius: "50%",
-              background: running ? "#333" : "#aaa",
+              background: running ? "var(--accent)" : "var(--line-strong)",
               animation: running ? "livePulse 1.2s ease-in-out infinite" : "none",
               flex: "0 0 auto",
             }} />
-            <h2 style={{ margin: 0, fontSize: 18 }}>Live Feedback</h2>
+            <h2 style={{ margin: 0, fontSize: "1.125rem" }}>Live Feedback</h2>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 14, color: "#777", fontSize: 13 }}>
-            <span>{running ? "Last 30s" : "Paused"}</span>
-            <strong style={{ color: "#333" }}>{formatLiveTime(totalLiveMs)} total</strong>
+          <div style={{ display: "flex", alignItems: "center", gap: 14, color: "var(--ink-muted)", fontSize: 13 }}>
+            <span className="vn-label" style={{ color: "var(--ink-muted)" }}>{running ? "Last 30s" : "Paused"}</span>
+            <strong className="vn-data" style={{ color: "var(--ink)" }}>{formatLiveTime(totalLiveMs)} total</strong>
           </div>
         </div>
 
@@ -228,13 +213,13 @@ function LiveFeedbackPanel({ running, events }) {
               })}
             </div>
             {significantEvents.length === 0 && (
-              <div style={{ color: "#777", fontSize: 13, marginTop: 10 }}>
+              <div style={{ color: "var(--ink-muted)", fontSize: 13, marginTop: 10 }}>
                 No sustained feedback yet. Brief blips under 0.5s stay out of this monitor.
               </div>
             )}
           </div>
         ) : (
-          <div style={{ color: "#777", padding: "14px 16px", fontSize: 14 }}>
+          <div style={{ color: "var(--ink-muted)", padding: "14px 16px", fontSize: 14 }}>
             Start a session and sustained posture notes will stream here.
           </div>
         )}
@@ -251,7 +236,7 @@ function LiveFeedbackLane({ lane, events, nowMs, windowStart, totalMs, active })
       <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
         <InitialsBadge>{faultInitials(lane.fault_type, lane.hand)}</InitialsBadge>
         <span style={{
-          color: active ? "#222" : "#666",
+          color: active ? "var(--ink)" : "var(--ink-muted)",
           fontSize: 13,
           fontWeight: active ? 700 : 500,
           whiteSpace: "nowrap",
@@ -264,9 +249,9 @@ function LiveFeedbackLane({ lane, events, nowMs, windowStart, totalMs, active })
       <div style={{
         position: "relative",
         height: 28,
-        background: "#f7f7f7",
-        border: "1px solid #e8e8e8",
-        borderRadius: 6,
+        background: "var(--surface-sunken)",
+        border: "1px solid var(--line)",
+        borderRadius: "var(--r-md)",
         overflow: "hidden",
       }}>
         {[0, 1, 2, 3].map((tick) => (
@@ -278,7 +263,7 @@ function LiveFeedbackLane({ lane, events, nowMs, windowStart, totalMs, active })
               top: 0,
               bottom: 0,
               width: 1,
-              background: tick === 3 ? "#bbb" : "#e2e2e2",
+              background: tick === 3 ? "var(--line-strong)" : "var(--line)",
             }}
           />
         ))}
@@ -300,9 +285,9 @@ function LiveFeedbackLane({ lane, events, nowMs, windowStart, totalMs, active })
                 top: 6,
                 bottom: 6,
                 borderRadius: 999,
-                background: "#333",
+                background: isLatest ? "var(--accent)" : "var(--ink)",
                 opacity: isLatest ? 1 : 0.72,
-                boxShadow: isLatest ? "0 0 0 3px rgba(0, 0, 0, 0.12)" : "none",
+                boxShadow: isLatest ? "0 0 0 3px var(--accent-soft)" : "none",
                 transition: "left 180ms linear, width 180ms linear",
               }}
             />
@@ -314,10 +299,10 @@ function LiveFeedbackLane({ lane, events, nowMs, windowStart, totalMs, active })
           top: 0,
           bottom: 0,
           width: 2,
-          background: "#333",
+          background: "var(--accent)",
         }} />
       </div>
-      <div style={{ color: active ? "#222" : "#777", fontSize: 12, fontWeight: active ? 700 : 500, textAlign: "right" }}>
+      <div className="vn-data" style={{ color: active ? "var(--ink)" : "var(--ink-muted)", fontSize: 12, fontWeight: active ? 700 : 500, textAlign: "right" }}>
         {formatLiveTime(totalMs)}
       </div>
     </>
@@ -326,17 +311,17 @@ function LiveFeedbackLane({ lane, events, nowMs, windowStart, totalMs, active })
 
 function InitialsBadge({ children }) {
   return (
-    <span style={{
+    <span className="vn-data" style={{
       width: 24,
       height: 20,
       borderRadius: 5,
-      background: "#333",
-      color: "#fff",
+      background: "var(--ink)",
+      color: "var(--surface)",
       display: "inline-flex",
       alignItems: "center",
       justifyContent: "center",
       fontSize: 10,
-      fontWeight: 800,
+      fontWeight: 700,
       letterSpacing: 0,
       lineHeight: 1,
       flex: "0 0 auto",

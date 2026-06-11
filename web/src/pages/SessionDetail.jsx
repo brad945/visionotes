@@ -4,9 +4,17 @@ import { getSession } from "../api";
 
 const SIGNIFICANT_THRESHOLD_MS = 500;
 
+// Read a CSS custom property off :root so canvas (which can't use var()) and DOM
+// share one source of truth with tokens.css.
+function cssVar(name, fallback = "") {
+  if (typeof window === "undefined") return fallback;
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
+}
+
+// Faults are Signal Clay everywhere (the Clay-Means-Fault rule). var() strings for DOM.
 const FAULT_VISUAL = {
-  accent: "#333",
-  fill: "#333",
+  accent: "var(--signal)",
+  fill: "var(--signal)",
   borderStyle: "solid",
   radius: 5,
 };
@@ -71,8 +79,8 @@ function drawFaultBar(ctx, x, y, width, height, visual, alpha, label) {
     const widthBasedFontSize = ((width - 4) / label.length) * 1.35;
     const fontSize = Math.max(4, Math.min(maxFontSize, widthBasedFontSize));
     ctx.globalAlpha = Math.min(1, alpha + 0.25);
-    ctx.fillStyle = "#fff";
-    ctx.font = `700 ${fontSize}px system-ui, sans-serif`;
+    ctx.fillStyle = visual.textColor || "#fff";
+    ctx.font = `700 ${fontSize}px "IBM Plex Mono", ui-monospace, monospace`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText(label, x + width / 2, y + height / 2 + 0.2);
@@ -109,6 +117,18 @@ function Timeline({ faults, sessionDurationMs, timeOrigin }) {
     ctx.clearRect(0, 0, W, H);
     const barHitboxes = [];
 
+    // Resolve design tokens once for this paint (canvas needs concrete colors).
+    const palette = {
+      fill: cssVar("--signal", "#c2410c"),
+      laneEven: cssVar("--surface-sunken", "#eef1f1"),
+      laneOdd: cssVar("--surface", "#ffffff"),
+      tickMinor: cssVar("--line", "#dde1e1"),
+      tickMajor: cssVar("--line-strong", "#c4c9c9"),
+      label: cssVar("--ink", "#16191b"),
+      axis: cssVar("--ink-muted", "#565c61"),
+      barText: cssVar("--surface", "#ffffff"),
+    };
+
     // Group faults into lanes by type+hand
     const lanes = {};
     for (const f of faults) {
@@ -132,7 +152,7 @@ function Timeline({ faults, sessionDurationMs, timeOrigin }) {
     // Lane backgrounds
     for (let i = 0; i < laneKeys.length; i++) {
       const y = topPad + i * laneHeight;
-      ctx.fillStyle = i % 2 === 0 ? "#fafafa" : "#fff";
+      ctx.fillStyle = i % 2 === 0 ? palette.laneEven : palette.laneOdd;
       ctx.fillRect(chartLeft, y, chartWidth, laneHeight);
     }
 
@@ -141,7 +161,7 @@ function Timeline({ faults, sessionDurationMs, timeOrigin }) {
       const x = chartLeft + (chartWidth * tickMs) / sessionDurationMs;
       const isMinute = second > 0 && second % 60 === 0;
       const isEndpoint = second === 0 || second === totalSeconds;
-      ctx.strokeStyle = isMinute || isEndpoint ? "#9f9f9f" : "#d4d4d4";
+      ctx.strokeStyle = isMinute || isEndpoint ? palette.tickMajor : palette.tickMinor;
       ctx.lineWidth = isMinute || isEndpoint ? 1.25 : 1;
       ctx.beginPath();
       ctx.moveTo(x, topPad);
@@ -156,8 +176,8 @@ function Timeline({ faults, sessionDurationMs, timeOrigin }) {
       const y = topPad + i * laneHeight;
 
       // Label
-      ctx.fillStyle = "#333";
-      ctx.font = "12px system-ui, sans-serif";
+      ctx.fillStyle = palette.label;
+      ctx.font = '12px "IBM Plex Sans", system-ui, sans-serif';
       ctx.fillText(lane.label, 4, y + laneHeight / 2 + 4);
 
       // Fault bars
@@ -171,7 +191,8 @@ function Timeline({ faults, sessionDurationMs, timeOrigin }) {
         const barLabel = (ev.value || 0) >= SIGNIFICANT_THRESHOLD_MS
           ? faultInitials(ev.fault_type, ev.hand)
           : "";
-        drawFaultBar(ctx, barX, y + 3, barW, laneHeight - 6, lane.visual, alpha, barLabel);
+        const resolvedVisual = { fill: palette.fill, accent: palette.fill, radius: lane.visual.radius, textColor: palette.barText };
+        drawFaultBar(ctx, barX, y + 3, barW, laneHeight - 6, resolvedVisual, alpha, barLabel);
 
         const startMs = ev.timestamp_ms - timeOrigin;
         const endMs = startMs + (ev.value || 0);
@@ -191,8 +212,8 @@ function Timeline({ faults, sessionDurationMs, timeOrigin }) {
     barHitboxesRef.current = barHitboxes;
 
     // Time axis labels at bottom
-    ctx.fillStyle = "#555";
-    ctx.font = "600 12px system-ui, sans-serif";
+    ctx.fillStyle = palette.axis;
+    ctx.font = '500 12px "IBM Plex Mono", ui-monospace, monospace';
     for (let second = 0; second <= totalSeconds; second++) {
       const shouldLabel = second === 0 || second === totalSeconds || second % secondsPerLabel === 0;
       if (!shouldLabel) continue;
@@ -262,10 +283,10 @@ function Timeline({ faults, sessionDurationMs, timeOrigin }) {
           opacity: hoveredBar ? 1 : 0,
           pointerEvents: "none",
           transition: "opacity 120ms ease, transform 120ms ease",
-          background: "#111",
-          color: "#fff",
-          borderRadius: 6,
-          boxShadow: "0 8px 22px rgba(0, 0, 0, 0.22)",
+          background: "var(--ink)",
+          color: "var(--surface)",
+          borderRadius: "var(--r-md)",
+          boxShadow: "0 8px 22px rgba(16, 25, 28, 0.28)",
           padding: "8px 10px",
           minWidth: 180,
           zIndex: 2,
@@ -279,8 +300,8 @@ function Timeline({ faults, sessionDurationMs, timeOrigin }) {
               <span style={visualSwatchStyle(hoveredBar.visual, 10)} />
               {hoveredBar.label}
             </div>
-            <div>{formatPreciseSecond(hoveredBar.startMs)} to {formatPreciseSecond(hoveredBar.endMs)}</div>
-            <div style={{ color: "#cfcfcf" }}>
+            <div className="vn-data">{formatPreciseSecond(hoveredBar.startMs)} to {formatPreciseSecond(hoveredBar.endMs)}</div>
+            <div style={{ color: "rgba(255,255,255,0.7)" }}>
               {formatPreciseSecond(hoveredBar.durationMs)} {hoveredBar.durationMs >= SIGNIFICANT_THRESHOLD_MS ? "sustained fault" : "brief blip"}
             </div>
           </>
@@ -315,8 +336,8 @@ export default function SessionDetail() {
     setSelectedFaultKeys(new Set());
   }, [sessionId]);
 
-  if (loading) return <main style={{ padding: "32px 0" }}>Loading…</main>;
-  if (error) return <main style={{ padding: "32px 0", color: "red" }}>Error: {error}</main>;
+  if (loading) return <main style={{ padding: "32px 0" }} className="vn-muted">Loading…</main>;
+  if (error) return <main style={{ padding: "32px 0", color: "var(--signal-deep)" }}>Error: {error}</main>;
 
   const allFaults = session.fault_events || [];
   const visibleFaults = selectedFaultKeys.size > 0
@@ -368,14 +389,14 @@ export default function SessionDetail() {
 
   return (
     <main style={{ padding: "32px 0" }}>
-      <Link to="/history" style={{ color: "#0066cc", fontSize: 14 }}>← Back to History</Link>
+      <Link to="/history" style={{ fontSize: 14 }}>← Back to History</Link>
 
       <h1 style={{ marginTop: 12 }}>Session Detail</h1>
 
-      <div style={{ display: "flex", gap: 32, marginBottom: 24, fontSize: 15 }}>
-        <div><strong>Started:</strong> {new Date(session.started_at).toLocaleString()}</div>
-        <div><strong>Duration:</strong> {formatDuration(session.duration_seconds)}</div>
-        <div><strong>Significant faults:</strong> {significant.length}</div>
+      <div style={{ display: "flex", gap: 32, flexWrap: "wrap", margin: "12px 0 24px", fontSize: "0.95rem" }}>
+        <div><span className="vn-label">Started</span><div className="vn-data" style={{ marginTop: 2 }}>{new Date(session.started_at).toLocaleString()}</div></div>
+        <div><span className="vn-label">Duration</span><div className="vn-data" style={{ marginTop: 2 }}>{formatDuration(session.duration_seconds)}</div></div>
+        <div><span className="vn-label">Significant faults</span><div className="vn-data" style={{ marginTop: 2 }}>{significant.length}</div></div>
       </div>
 
       {/* Summary cards — only sustained faults (>0.5s) */}
@@ -401,9 +422,9 @@ export default function SessionDetail() {
                 }
               }}
               style={{
-                background: "#fff",
-                border: `2px ${s.visual.borderStyle} ${s.visual.accent}`,
-                borderRadius: 8,
+                background: "var(--surface)",
+                border: `1px solid ${isSelected ? "var(--signal)" : "var(--line)"}`,
+                borderRadius: "var(--r-lg)",
                 padding: "12px 16px",
                 minWidth: 180,
                 textAlign: "left",
@@ -412,23 +433,23 @@ export default function SessionDetail() {
                 color: "inherit",
                 opacity: isDimmed ? 0.45 : 1,
                 transform: isSelected ? "translateY(-2px)" : "none",
-                boxShadow: isSelected ? "0 8px 20px rgba(0, 0, 0, 0.12)" : "none",
-                transition: "opacity 140ms ease, transform 140ms ease, box-shadow 140ms ease",
+                boxShadow: isSelected ? "var(--shadow-lift)" : "none",
+                transition: "opacity 140ms var(--ease-out), transform 140ms var(--ease-out), box-shadow 140ms var(--ease-out), border-color 140ms var(--ease-out)",
               }}
             >
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 13, color: "#555" }}>
-                  <span style={{
+                <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 13, color: "var(--ink-muted)" }}>
+                  <span className="vn-data" style={{
                     width: 24,
                     height: 20,
                     borderRadius: 5,
-                    background: "#333",
-                    color: "#fff",
+                    background: "var(--signal)",
+                    color: "var(--surface)",
                     display: "inline-flex",
                     alignItems: "center",
                     justifyContent: "center",
                     fontSize: 10,
-                    fontWeight: 800,
+                    fontWeight: 700,
                     letterSpacing: 0,
                     lineHeight: 1,
                     flex: "0 0 auto",
@@ -443,11 +464,11 @@ export default function SessionDetail() {
                   onChange={() => focusSummaryCard(s.key)}
                   onClick={(event) => event.stopPropagation()}
                   aria-label={`Show only ${s.label}`}
+                  className="vn-accent-control"
                   style={{
                     width: 18,
                     height: 18,
                     margin: 0,
-                    accentColor: "#555",
                     cursor: "pointer",
                     flex: "0 0 auto",
                   }}
@@ -455,15 +476,15 @@ export default function SessionDetail() {
               </div>
 
               <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginTop: 8 }}>
-                <span style={{ fontSize: 28, fontWeight: 700, color: s.visual.accent }}>{s.count}</span>
-                <span style={{ fontSize: 13, color: "#888" }}>
+                <span className="vn-data" style={{ fontSize: 28, fontWeight: 700, color: "var(--signal)" }}>{s.count}</span>
+                <span className="vn-data" style={{ fontSize: 13, color: "var(--ink-muted)" }}>
                   {(s.totalMs / 1000).toFixed(1)}s total
                 </span>
               </div>
 
               <div style={{
                 height: 6,
-                background: "#eee",
+                background: "var(--surface-sunken)",
                 borderRadius: 999,
                 overflow: "hidden",
                 marginTop: 9,
@@ -471,12 +492,12 @@ export default function SessionDetail() {
                 <div style={{
                   width: `${Math.max(3, Math.round(share * 100))}%`,
                   height: "100%",
-                  background: s.visual.accent,
+                  background: "var(--signal)",
                   borderRadius: 999,
                 }} />
               </div>
 
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginTop: 7, color: "#777", fontSize: 12 }}>
+              <div className="vn-data" style={{ display: "flex", justifyContent: "space-between", gap: 12, marginTop: 7, color: "var(--ink-muted)", fontSize: 12 }}>
                 <span>{Math.round(share * 100)}% of fault time</span>
                 <span>{(averageMs / 1000).toFixed(1)}s avg</span>
               </div>
@@ -485,7 +506,7 @@ export default function SessionDetail() {
           })}
         </div>
       ) : (
-        <p style={{ color: "#888", marginBottom: 24 }}>No significant faults ({">"} 0.5s) — nice session!</p>
+        <p style={{ color: "var(--positive-deep)", fontWeight: 500, marginBottom: 24 }}>No significant faults ({">"} 0.5s) — nice session!</p>
       )}
 
       {/* Detailed timeline toggle */}
@@ -493,27 +514,19 @@ export default function SessionDetail() {
         <>
           <button
             onClick={() => setShowDetailed(!showDetailed)}
-            style={{
-              background: "none",
-              border: "1px solid #ccc",
-              borderRadius: 6,
-              padding: "6px 14px",
-              cursor: "pointer",
-              fontSize: 14,
-              color: "#555",
-              marginBottom: 16,
-            }}
+            className="vn-btn vn-btn--ghost"
+            style={{ marginBottom: 16 }}
           >
             {showDetailed ? "Hide" : "Show"} Detailed Timeline
-            <span style={{ fontSize: 12, color: "#999", marginLeft: 6 }}>
+            <span className="vn-data" style={{ fontSize: 12, color: "var(--ink-muted)", marginLeft: 6 }}>
               ({allFaults.length} total event{allFaults.length !== 1 ? "s" : ""})
             </span>
           </button>
 
           {showDetailed && (
-            <div style={{ border: "1px solid #eee", borderRadius: 8, padding: 16, background: "#fafafa" }}>
+            <div style={{ border: "1px solid var(--line)", borderRadius: "var(--r-lg)", padding: 16, background: "var(--surface)" }}>
               <Timeline faults={visibleFaults} sessionDurationMs={sessionDurationMs} timeOrigin={timeOrigin} />
-              <p style={{ fontSize: 12, color: "#999", marginTop: 8, marginBottom: 0 }}>
+              <p className="vn-muted" style={{ fontSize: 12, marginTop: 8, marginBottom: 0 }}>
                 Solid bars = sustained faults ({">"} 0.5s). Faded bars = brief blips ({"<"} 0.5s).
               </p>
             </div>

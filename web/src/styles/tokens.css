@@ -11,10 +11,10 @@
   --line: #dde1e1;
   --line-strong: #c4c9c9;
 
-  /* Color — Accent (Needle Teal). One Voice Rule: ≤10% of any screen. */
-  --accent: #0e7c86;
-  --accent-deep: #0a5c64; /* small text on light */
-  --accent-soft: #e1eff0;
+  /* Color — Accent (Needle Blue / Slate Blue). One Voice Rule: ≤10% of any screen. */
+  --accent: #2b5ce6;
+  --accent-deep: #1e47c0; /* small text on light */
+  --accent-soft: #e7edfb;
 
   /* Color — Signal (Clay). Faults + Stop only. */
   --signal: #c2410c;
