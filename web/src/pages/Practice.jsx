@@ -1,6 +1,18 @@
 import { useRef, useState } from "react";
 import useVision from "../vision/useVision";
 import { startSession, endSession, postFaults } from "../api";
+import FaultList from "../components/FaultList";
+
+// Map the active fault label strings from useVision into the shape FaultList
+// expects. `id` is derived from the fault's identity (stable across frames) so
+// the listbox's roving focus/active option survives the 4x/sec state updates.
+function toFaultItems(labels) {
+  return labels.map((label) => ({
+    id: label.toLowerCase().replace(/\s+/g, "-"),
+    label,
+    severity: label.includes("wrist") ? "error" : "warn",
+  }));
+}
 
 const SIGNIFICANT_THRESHOLD_MS = 500;
 const LIVE_WINDOW_MS = 30_000;
@@ -95,16 +107,11 @@ export default function Practice() {
         <LiveFeedbackPanel running={running} events={liveEvents} />
       )}
 
-      {/* Fault labels */}
-      {faults.length > 0 && (
-        <div style={{ marginBottom: 12, display: "flex", flexWrap: "wrap", gap: 8 }}>
-          {faults.map((f, i) => (
-            <span key={i} className="vn-badge-fault">
-              {f}
-            </span>
-          ))}
-        </div>
-      )}
+      {/* Live posture-fault feed (accessible WAI-ARIA listbox) */}
+      <section style={{ marginBottom: 16 }}>
+        <p className="vn-label" style={{ marginBottom: 6 }}>Posture Faults</p>
+        <FaultList faults={toFaultItems(faults)} />
+      </section>
 
       {/* Video + canvas overlay */}
       <div style={{ position: "relative", display: "inline-block", background: "#000", borderRadius: "var(--r-lg)", overflow: "hidden" }}>

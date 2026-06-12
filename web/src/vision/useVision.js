@@ -17,8 +17,8 @@ import {
   isWristCollapsed,
   WRIST_FAULT_INDICES,
   checkArmPosture,
-  FaultSmoother,
-} from "./faults";
+} from "../logic/faults";
+import { FaultSmoother } from "./faults";
 import { drawHand, drawArms } from "./draw";
 
 // CDN path for the WASM + model files MediaPipe needs at runtime

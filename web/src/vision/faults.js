@@ -1,70 +1,16 @@
 /**
- * Fault detection heuristics — ported from Python spike.
+ * FaultSmoother — stateful, per-hand temporal smoothing + fault-period tracking.
  *
- * Key differences from the spike:
- *  - Per-hand smoothing (separate buffer per hand label).
- *  - Returns which landmark indices are faulting (for joint-level coloring).
- *  - Tracks fault periods (start + end) for history logging.
+ * This is the CAMERA-LOOP side of fault detection: it holds per-label rolling
+ * buffers and converts the per-frame boolean verdicts (from the pure geometry in
+ * logic/faults.js) into debounced active/started signals and timed fault periods.
+ *
+ * The pure decision math lives in ../logic/faults.js and is imported by the
+ * camera loop directly; this file deliberately keeps only the stateful parts
+ * (per-hand buffers, monotonic-timestamp period bookkeeping).
  */
 
 const SMOOTHING_WINDOW = 7;
-
-// --- Collapsed-wrist detection ---------------------------------------------------
-
-/**
- * Returns true if the wrist is dropped relative to the knuckle line.
- * landmarks: array of 21 {x, y, z} (normalized coords, y-down).
- */
-export function isWristCollapsed(landmarks) {
-  const wristY = landmarks[0].y;
-  const knuckleY =
-    (landmarks[5].y + landmarks[9].y + landmarks[13].y + landmarks[17].y) / 4;
-  return wristY - knuckleY > 0.04;
-}
-
-// Fault indices for drawing: wrist + the four knuckles used in the check
-export const WRIST_FAULT_INDICES = [0, 5, 9, 13, 17];
-
-// --- Arm-posture detection (elbow angle) -----------------------------------------
-
-function angleDeg(a, b, c) {
-  // Angle at point B formed by segments B→A and B→C.
-  const ba = [a.x - b.x, a.y - b.y];
-  const bc = [c.x - b.x, c.y - b.y];
-  const dot = ba[0] * bc[0] + ba[1] * bc[1];
-  const magBA = Math.hypot(ba[0], ba[1]);
-  const magBC = Math.hypot(bc[0], bc[1]);
-  const cos = Math.max(-1, Math.min(1, dot / (magBA * magBC + 1e-9)));
-  return (Math.acos(cos) * 180) / Math.PI;
-}
-
-/**
- * Returns { fault: bool, elbowAngle: number|null } for one arm.
- * poseLandmarks: array of 33 {x, y, z, visibility}.
- * side: 'left' | 'right'
- */
-export function checkArmPosture(poseLandmarks, side) {
-  const [sh, el, wr] =
-    side === "left" ? [11, 13, 15] : [12, 14, 16];
-
-  const visible = (i) => (poseLandmarks[i].visibility ?? 1) > 0.3;
-  if (!visible(sh) || !visible(el) || !visible(wr)) {
-    return { fault: false, elbowAngle: null };
-  }
-
-  const angle = angleDeg(
-    poseLandmarks[sh],
-    poseLandmarks[el],
-    poseLandmarks[wr]
-  );
-  return { fault: angle > 160 || angle < 70, elbowAngle: angle };
-}
-
-// Pose landmark indices for arm drawing
-export const ARM_INDICES = {
-  left: { shoulder: 11, elbow: 13, wrist: 15 },
-  right: { shoulder: 12, elbow: 14, wrist: 16 },
-};
 
 // --- Per-hand smoothing buffer with period tracking ------------------------------
 
