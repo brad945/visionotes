@@ -6,12 +6,19 @@ import FaultList from "../components/FaultList";
 // Map the active fault label strings from useVision into the shape FaultList
 // expects. `id` is derived from the fault's identity (stable across frames) so
 // the listbox's roving focus/active option survives the 4x/sec state updates.
+// Identical labels are collapsed: MediaPipe occasionally tags both hands with
+// the same handedness (or "Unknown"), which would otherwise yield duplicate ids
+// / React keys and break the listbox's focus management.
 function toFaultItems(labels) {
-  return labels.map((label) => ({
-    id: label.toLowerCase().replace(/\s+/g, "-"),
-    label,
-    severity: label.includes("wrist") ? "error" : "warn",
-  }));
+  const seen = new Set();
+  const items = [];
+  for (const label of labels) {
+    const id = label.toLowerCase().replace(/\s+/g, "-");
+    if (seen.has(id)) continue;
+    seen.add(id);
+    items.push({ id, label, severity: label.includes("wrist") ? "error" : "warn" });
+  }
+  return items;
 }
 
 const SIGNIFICANT_THRESHOLD_MS = 500;
@@ -107,11 +114,13 @@ export default function Practice() {
         <LiveFeedbackPanel running={running} events={liveEvents} />
       )}
 
-      {/* Live posture-fault feed (accessible WAI-ARIA listbox) */}
-      <section style={{ marginBottom: 16 }}>
-        <p className="vn-label" style={{ marginBottom: 6 }}>Posture Faults</p>
-        <FaultList faults={toFaultItems(faults)} />
-      </section>
+      {/* Live posture-fault feed (accessible WAI-ARIA listbox), shown during a session */}
+      {running && (
+        <section style={{ marginBottom: 16 }}>
+          <p className="vn-label" style={{ marginBottom: 6 }}>Posture Faults</p>
+          <FaultList faults={toFaultItems(faults)} />
+        </section>
+      )}
 
       {/* Video + canvas overlay */}
       <div style={{ position: "relative", display: "inline-block", background: "#000", borderRadius: "var(--r-lg)", overflow: "hidden" }}>
