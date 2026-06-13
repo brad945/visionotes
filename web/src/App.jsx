@@ -22,7 +22,7 @@ export default function App() {
   if (!user) {
     return (
       <div className="vn-page">
-        <div style={{ display: "flex", justifyContent: "flex-end", paddingTop: 16 }}>
+        <div style={{ display: "flex", justifyContent: "center", paddingTop: 36 }}>
           <ThemeToggle />
         </div>
         <Login />
