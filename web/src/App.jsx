@@ -28,7 +28,9 @@ export default function App() {
         <div style={{ position: "absolute", top: 76, left: 0, right: 0, display: "flex", justifyContent: "center" }}>
           <ThemeToggle />
         </div>
-        <Login />
+        <div style={{ transform: "translateY(-40px)" }}>
+          <Login />
+        </div>
       </div>
     );
   }
