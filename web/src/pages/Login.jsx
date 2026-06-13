@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { supabase } from "../supabaseClient";
 
-export default function Login() {
+export default function Login({ splash = false }) {
   const [email, setEmail] = useState("");
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState(null);
@@ -31,6 +31,7 @@ export default function Login() {
 
   return (
     <main style={{ maxWidth: 360, margin: "0 auto", textAlign: "center" }}>
+      {splash && (
       <style>{`
         .login-send-btn {
           /* curved surface: lit at the top, falling into shadow at the bottom */
@@ -67,6 +68,7 @@ export default function Login() {
             inset 0 1px 0 rgba(255,255,255,0.06);
         }
       `}</style>
+      )}
       <p className="vn-label" style={{ marginBottom: 12 }}>VisioNotes</p>
       <h1>Log in</h1>
       <p className="vn-muted" style={{ margin: "8px 0 24px" }}>
@@ -80,15 +82,23 @@ export default function Login() {
           onChange={(e) => setEmail(e.target.value)}
           required
           className="vn-input"
-          style={{
-            textAlign: "left",
-            background: "rgba(255,255,255,0.06)",
-            borderColor: "rgba(255,255,255,0.18)",
-            backdropFilter: "blur(6px)",
-            WebkitBackdropFilter: "blur(6px)",
-          }}
+          style={
+            splash
+              ? {
+                  textAlign: "left",
+                  background: "rgba(255,255,255,0.06)",
+                  borderColor: "rgba(255,255,255,0.18)",
+                  backdropFilter: "blur(6px)",
+                  WebkitBackdropFilter: "blur(6px)",
+                }
+              : { textAlign: "left" }
+          }
         />
-        <button type="submit" className="vn-btn login-send-btn" style={{ marginTop: 12, width: "100%" }}>
+        <button
+          type="submit"
+          className={splash ? "vn-btn login-send-btn" : "vn-btn vn-btn--primary"}
+          style={{ marginTop: 12, width: "100%" }}
+        >
           Send link
         </button>
       </form>

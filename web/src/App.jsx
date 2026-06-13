@@ -1,5 +1,6 @@
 import { Routes, Route } from "react-router-dom";
 import { useAuth } from "./auth/AuthProvider";
+import { useTheme } from "./theme/ThemeProvider";
 import Navbar from "./components/Navbar";
 import HeroField from "./components/HeroField";
 import ThemeToggle from "./components/ThemeToggle";
@@ -11,6 +12,7 @@ import Visualize from "./pages/Visualize";
 
 export default function App() {
   const { user, loading } = useAuth();
+  const { theme } = useTheme();
 
   if (loading) {
     return (
@@ -21,12 +23,32 @@ export default function App() {
   }
 
   if (!user) {
-    // Dark, branded splash: the particle field auto-assembles behind the login
-    // form. Forced to the dark token set so the login text stays legible on the
-    // near-black field, regardless of the app-wide theme.
+    // Light theme → clean centered login. Dark theme → branded particle splash
+    // (the dot cloud is a dark-mode effect, so it only shows in dark). The toggle
+    // therefore visibly flips between the two.
+    if (theme !== "dark") {
+      return (
+        <div
+          style={{
+            minHeight: "100vh",
+            position: "relative",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <div style={{ position: "absolute", top: 76, left: 0, right: 0, zIndex: 3, display: "flex", justifyContent: "center" }}>
+            <ThemeToggle />
+          </div>
+          <div style={{ transform: "translateY(-40px)", padding: "0 16px" }}>
+            <Login />
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div
-        data-theme="dark"
         style={{
           minHeight: "100vh",
           position: "relative",
@@ -52,7 +74,7 @@ export default function App() {
           <ThemeToggle />
         </div>
         <div style={{ position: "relative", zIndex: 2, transform: "translateY(-40px)", padding: "0 16px" }}>
-          <Login />
+          <Login splash />
         </div>
       </div>
     );
