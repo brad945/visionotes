@@ -20,21 +20,21 @@ export default function Login() {
   if (submitted) {
     return (
       <main style={{ padding: "96px 0", textAlign: "center", maxWidth: 420, margin: "0 auto" }}>
-        <p className="vn-label" style={{ marginBottom: 12 }}>Magic link sent</p>
+        <p className="vn-label" style={{ marginBottom: 12 }}>Link sent</p>
         <h1>Check your email</h1>
         <p className="vn-muted" style={{ marginTop: 12 }}>
-          We sent a magic link to <strong style={{ color: "var(--ink)" }}>{email}</strong>. Click it to log in.
+          We sent a login link to <strong style={{ color: "var(--ink)" }}>{email}</strong>. Click it to log in.
         </p>
       </main>
     );
   }
 
   return (
-    <main style={{ padding: "96px 0", maxWidth: 360, margin: "0 auto" }}>
+    <main style={{ padding: "96px 0", maxWidth: 360, margin: "0 auto", textAlign: "center" }}>
       <p className="vn-label" style={{ marginBottom: 12 }}>VisioNotes</p>
       <h1>Log in</h1>
       <p className="vn-muted" style={{ margin: "8px 0 24px" }}>
-        Enter your email and we'll send you a one-tap magic link.
+        Enter your email and we'll send you a login link.
       </p>
       <form onSubmit={handleLogin}>
         <input
@@ -44,9 +44,10 @@ export default function Login() {
           onChange={(e) => setEmail(e.target.value)}
           required
           className="vn-input"
+          style={{ textAlign: "left" }}
         />
         <button type="submit" className="vn-btn vn-btn--primary" style={{ marginTop: 12, width: "100%" }}>
-          Send magic link
+          Send link
         </button>
       </form>
       {error && (
