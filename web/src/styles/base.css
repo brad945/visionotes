@@ -122,14 +122,14 @@ a:hover {
 }
 .vn-btn--primary {
   background: var(--accent);
-  color: var(--surface);
+  color: var(--on-accent);
 }
 .vn-btn--primary:not(:disabled):hover {
   background: var(--accent-deep);
 }
 .vn-btn--stop {
   background: var(--signal);
-  color: var(--surface);
+  color: var(--on-signal);
 }
 .vn-btn--stop:not(:disabled):hover {
   background: var(--signal-deep);
@@ -181,7 +181,7 @@ a:hover {
   align-items: center;
   gap: 6px;
   background: var(--signal);
-  color: var(--surface);
+  color: var(--on-signal);
   font-family: var(--font-mono);
   font-size: 0.7rem;
   font-weight: 600;

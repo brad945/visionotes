@@ -13,8 +13,8 @@
 
   /* Color — Accent (Needle Blue / Slate Blue). One Voice Rule: ≤10% of any screen. */
   --accent: #2b5ce6;
-  --accent-deep: #1e47c0; /* small text on light */
-  --accent-soft: #e7edfb;
+  --accent-deep: #1e47c0; /* small text / links on light */
+  --accent-soft: #e7edfb; /* tint: selection, focus halo, active-bar glow */
 
   /* Color — Signal (Clay). Faults + Stop only. */
   --signal: #c2410c;
@@ -24,6 +24,11 @@
   /* Color — Progress (Green). Improvement only. */
   --positive: #15803d;
   --positive-deep: #11652f;
+
+  /* Foreground ON a colored fill — near-white in BOTH themes, so button/badge/
+     bar-label text never inverts to dark when --surface flips in dark mode. */
+  --on-accent: #ffffff;
+  --on-signal: #ffffff;
 
   /* Typography */
   --font-sans: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
@@ -60,4 +65,52 @@
 
   /* Layout */
   --page-max: 960px;
+
+  color-scheme: light;
+}
+
+/* ---- Dark theme -----------------------------------------------------------
+   Set via data-theme="dark" on <html> (ThemeProvider + the anti-FOUC script in
+   index.html). Only the values that must change are overridden; radius/spacing/
+   motion/layout are shared. Because canvas reads these via getComputedStyle and
+   SVG via var(), the charts follow automatically (the canvas needs a redraw,
+   wired in SessionDetail). NOTE the role inversions:
+     - *-deep tokens go BRIGHTER than the base (small text/links/errors on dark)
+     - *-soft tokens go to dark tints (selection / focus halo / active-bar glow)
+   All foreground/muted/-deep pairs checked ≥ 4.5:1 (AA) on their backgrounds. */
+:root[data-theme="dark"] {
+  /* Neutral — tonal layering: sunken (darkest) < paper < surface (lifted) */
+  --paper: #0e1315;
+  --surface: #1a2123;
+  --surface-sunken: #0b1012;
+  --ink: #e9edee; /* ~13:1 on paper */
+  --ink-muted: #9aa3a8; /* ~6.4:1 on paper, ~5.6:1 on surface */
+  --line: #2b3338;
+  --line-strong: #3c454b;
+
+  /* Accent — base keeps white text legible (~4.7:1); deep BRIGHTENS for links. */
+  --accent: #3a6af0;
+  --accent-deep: #93acf7; /* small text / links on dark (~7:1 on surface) */
+  --accent-soft: #2a3a5e; /* dark tint: selection, focus halo, active-bar glow */
+
+  /* Signal — clay holds white text (~4.6:1); deep BRIGHTENS for error text. */
+  --signal: #c2410c;
+  --signal-deep: #ef875a; /* error text on dark (~6:1 on surface) */
+  --signal-soft: #3a1f12;
+
+  /* Progress — both brighten for visibility / legibility on dark. */
+  --positive: #2fa85d;
+  --positive-deep: #57cd86; /* improvement text on dark (~8:1 on surface) */
+
+  /* Elevation reads less on dark; lean on darker, larger ambient shadow. */
+  --shadow-lift: 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 28px -14px rgba(0, 0, 0, 0.6);
+
+  color-scheme: dark;
+}
+
+/* Smooth, restrained cross-fade when the theme flips. Honors reduced motion. */
+@media (prefers-reduced-motion: no-preference) {
+  body {
+    transition: background-color var(--dur) var(--ease-out), color var(--dur) var(--ease-out);
+  }
 }

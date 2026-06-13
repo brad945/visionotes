@@ -126,7 +126,7 @@ function Timeline({ faults, sessionDurationMs, timeOrigin }) {
       tickMajor: cssVar("--line-strong", "#c4c9c9"),
       label: cssVar("--ink", "#16191b"),
       axis: cssVar("--ink-muted", "#565c61"),
-      barText: cssVar("--surface", "#ffffff"),
+      barText: cssVar("--on-signal", "#ffffff"),
     };
 
     // Group faults into lanes by type+hand
@@ -260,7 +260,18 @@ function Timeline({ faults, sessionDurationMs, timeOrigin }) {
   useEffect(() => {
     draw();
     window.addEventListener("resize", draw);
-    return () => window.removeEventListener("resize", draw);
+    // The canvas reads design tokens at paint time, so a light/dark theme flip
+    // (data-theme on <html>) must trigger a repaint — SVG re-resolves var()
+    // live, but canvas does not.
+    const themeObserver = new MutationObserver(draw);
+    themeObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-theme"],
+    });
+    return () => {
+      window.removeEventListener("resize", draw);
+      themeObserver.disconnect();
+    };
   }, [draw]);
 
   const laneCount = new Set(faults.map((f) => `${f.hand}_${f.fault_type}`)).size;
@@ -444,7 +455,7 @@ export default function SessionDetail() {
                     height: 20,
                     borderRadius: 5,
                     background: "var(--signal)",
-                    color: "var(--surface)",
+                    color: "var(--on-signal)",
                     display: "inline-flex",
                     alignItems: "center",
                     justifyContent: "center",

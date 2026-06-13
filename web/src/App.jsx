@@ -1,6 +1,7 @@
 import { Routes, Route } from "react-router-dom";
 import { useAuth } from "./auth/AuthProvider";
 import Navbar from "./components/Navbar";
+import ThemeToggle from "./components/ThemeToggle";
 import Login from "./pages/Login";
 import Practice from "./pages/Practice";
 import History from "./pages/History";
@@ -21,6 +22,9 @@ export default function App() {
   if (!user) {
     return (
       <div className="vn-page">
+        <div style={{ display: "flex", justifyContent: "flex-end", paddingTop: 16 }}>
+          <ThemeToggle />
+        </div>
         <Login />
       </div>
     );

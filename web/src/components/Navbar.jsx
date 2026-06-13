@@ -1,6 +1,7 @@
 import { NavLink } from "react-router-dom";
 import { useAuth } from "../auth/AuthProvider";
 import { supabase } from "../supabaseClient";
+import ThemeToggle from "./ThemeToggle";
 
 const linkStyle = ({ isActive }) => ({
   fontWeight: isActive ? 600 : 400,
@@ -20,6 +21,7 @@ export default function Navbar() {
       <NavLink to="/" style={linkStyle} end>Practice</NavLink>
       <NavLink to="/history" style={linkStyle}>History</NavLink>
       <NavLink to="/visualize" style={linkStyle}>Visualize</NavLink>
+      <ThemeToggle />
       {user && (
         <button onClick={() => supabase.auth.signOut()} className="vn-btn vn-btn--ghost">
           Log out

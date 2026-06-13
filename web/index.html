@@ -14,6 +14,24 @@
   </head>
   <body>
     <div id="root"></div>
+    <!-- Set the theme before React paints, so there's no light flash in dark mode.
+         STORAGE_KEY ("vn-theme") must match src/theme/ThemeProvider.jsx. -->
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem("vn-theme");
+          var theme =
+            stored === "light" || stored === "dark"
+              ? stored
+              : window.matchMedia("(prefers-color-scheme: dark)").matches
+                ? "dark"
+                : "light";
+          document.documentElement.setAttribute("data-theme", theme);
+          var meta = document.querySelector('meta[name="theme-color"]');
+          if (meta) meta.setAttribute("content", theme === "dark" ? "#0e1315" : "#f7f8f8");
+        } catch (e) {}
+      })();
+    </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
