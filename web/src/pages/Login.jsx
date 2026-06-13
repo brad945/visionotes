@@ -19,7 +19,7 @@ export default function Login() {
 
   if (submitted) {
     return (
-      <main style={{ padding: "96px 0", textAlign: "center", maxWidth: 420, margin: "0 auto" }}>
+      <main style={{ textAlign: "center", maxWidth: 420, margin: "0 auto" }}>
         <p className="vn-label" style={{ marginBottom: 12 }}>Link sent</p>
         <h1>Check your email</h1>
         <p className="vn-muted" style={{ marginTop: 12 }}>
@@ -30,7 +30,7 @@ export default function Login() {
   }
 
   return (
-    <main style={{ padding: "96px 0", maxWidth: 360, margin: "0 auto", textAlign: "center" }}>
+    <main style={{ maxWidth: 360, margin: "0 auto", textAlign: "center" }}>
       <p className="vn-label" style={{ marginBottom: 12 }}>VisioNotes</p>
       <h1>Log in</h1>
       <p className="vn-muted" style={{ margin: "8px 0 24px" }}>
