@@ -23,30 +23,9 @@ export default function App() {
   }
 
   if (!user) {
-    // Light theme → clean centered login. Dark theme → branded particle splash
-    // (the dot cloud is a dark-mode effect, so it only shows in dark). The toggle
-    // therefore visibly flips between the two.
-    if (theme !== "dark") {
-      return (
-        <div
-          style={{
-            minHeight: "100vh",
-            position: "relative",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          <div style={{ position: "absolute", top: 76, left: 0, right: 0, zIndex: 3, display: "flex", justifyContent: "center" }}>
-            <ThemeToggle />
-          </div>
-          <div style={{ transform: "translateY(-40px)", padding: "0 16px" }}>
-            <Login />
-          </div>
-        </div>
-      );
-    }
-
+    // The particle splash shows in BOTH themes (HeroField recolors itself): dark
+    // dots on light, light/mint dots on dark. The form + scrim + toggle adapt.
+    const dark = theme === "dark";
     return (
       <div
         style={{
@@ -66,23 +45,28 @@ export default function App() {
             inset: 0,
             zIndex: 1,
             pointerEvents: "none",
-            background:
-              "radial-gradient(ellipse 56% 48% at 50% 50%, rgba(7,9,13,0.7), rgba(7,9,13,0) 70%)",
+            background: dark
+              ? "radial-gradient(ellipse 56% 48% at 50% 50%, rgba(7,9,13,0.72), rgba(7,9,13,0) 70%)"
+              : "radial-gradient(ellipse 56% 48% at 50% 50%, rgba(243,246,247,0.85), rgba(243,246,247,0) 70%)",
           }}
         />
         <div style={{ position: "absolute", top: 76, left: 0, right: 0, zIndex: 3, display: "flex", justifyContent: "center" }}>
           <ThemeToggle
-            style={{
-              background: "rgba(255,255,255,0.06)",
-              borderColor: "rgba(255,255,255,0.18)",
-              color: "#f2f4f8",
-              backdropFilter: "blur(6px)",
-              WebkitBackdropFilter: "blur(6px)",
-            }}
+            style={
+              dark
+                ? {
+                    background: "rgba(255,255,255,0.06)",
+                    borderColor: "rgba(255,255,255,0.18)",
+                    color: "#f2f4f8",
+                    backdropFilter: "blur(6px)",
+                    WebkitBackdropFilter: "blur(6px)",
+                  }
+                : undefined
+            }
           />
         </div>
         <div style={{ position: "relative", zIndex: 2, transform: "translateY(-40px)", padding: "0 16px" }}>
-          <Login splash />
+          <Login splash={dark} />
         </div>
       </div>
     );

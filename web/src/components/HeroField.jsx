@@ -1,5 +1,12 @@
 import { useRef, useEffect } from "react";
+import { useTheme } from "../theme/ThemeProvider";
 import "./HeroField.css";
+
+// Theme-aware particle palettes (rgb triples used in rgba()).
+const PALETTES = {
+  dark: { bg: "#07090d", base: "231,237,245", accent: "94,234,212", edge: "94,234,212" },
+  light: { bg: "#f3f6f7", base: "22,25,27", accent: "14,124,134", edge: "14,124,134" },
+};
 
 // --- Hand-landmark cloud (normalized 0..1 coords) --------------------------------
 const LM = [
@@ -45,10 +52,16 @@ export default function HeroField({
   // followCursor: glide the whole cloud toward the pointer.
   followCursor = false,
 }) {
+  const { theme } = useTheme();
   const canvasRef = useRef(null);
   const trackRef = useRef(null);
   const overlayRef = useRef(null);
   const cueRef = useRef(null);
+  // live theme for the rAF loop, so palette swaps without restarting the animation
+  const themeRef = useRef(theme);
+  useEffect(() => {
+    themeRef.current = theme;
+  }, [theme]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -176,10 +189,12 @@ export default function HeroField({
 
       ctx.clearRect(0, 0, W, H);
 
+      const pal = PALETTES[themeRef.current === "light" ? "light" : "dark"];
+
       const edgeP = clamp((P - 0.6) / 0.4, 0, 1);
       if (edgeP > 0.01) {
         ctx.lineWidth = 1;
-        ctx.strokeStyle = `rgba(94,234,212,${0.1 * edgeP})`;
+        ctx.strokeStyle = `rgba(${pal.edge},${0.1 * edgeP})`;
         for (const [pa, pb] of edgesScreen) {
           ctx.beginPath();
           ctx.moveTo(pa[0] + offX, pa[1] + offY);
@@ -199,9 +214,9 @@ export default function HeroField({
         const settled = local;
         const a = (0.15 + p.bright * 0.85) * (0.4 + 0.6 * settled);
         if (p.r > 1.2 && settled > 0.7) {
-          ctx.fillStyle = `rgba(94,234,212,${a})`;
+          ctx.fillStyle = `rgba(${pal.accent},${a})`;
         } else {
-          ctx.fillStyle = `rgba(231,237,245,${a})`;
+          ctx.fillStyle = `rgba(${pal.base},${a})`;
         }
         ctx.beginPath();
         ctx.arc(x + dx + offX, y + dy + offY, p.r, 0, Math.PI * 2);
@@ -253,7 +268,11 @@ export default function HeroField({
   // Background mode: just the canvas, filling its (positioned) parent.
   if (background) {
     return (
-      <div className="hero-fill" ref={trackRef}>
+      <div
+        className="hero-fill"
+        ref={trackRef}
+        style={{ background: PALETTES[theme === "light" ? "light" : "dark"].bg }}
+      >
         <canvas className="hero-canvas" ref={canvasRef} />
       </div>
     );
