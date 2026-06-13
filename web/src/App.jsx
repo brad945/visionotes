@@ -21,13 +21,14 @@ export default function App() {
 
   if (!user) {
     return (
-      <div className="vn-page" style={{ minHeight: "100vh" }}>
-        <div style={{ display: "flex", justifyContent: "center", paddingTop: 76 }}>
+      <div
+        className="vn-page"
+        style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", position: "relative" }}
+      >
+        <div style={{ position: "absolute", top: 76, left: 0, right: 0, display: "flex", justifyContent: "center" }}>
           <ThemeToggle />
         </div>
-        <div style={{ display: "flex", justifyContent: "center", paddingTop: "8vh" }}>
-          <Login />
-        </div>
+        <Login />
       </div>
     );
   }
