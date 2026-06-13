@@ -71,7 +71,15 @@ export default function App() {
           }}
         />
         <div style={{ position: "absolute", top: 76, left: 0, right: 0, zIndex: 3, display: "flex", justifyContent: "center" }}>
-          <ThemeToggle />
+          <ThemeToggle
+            style={{
+              background: "rgba(255,255,255,0.06)",
+              borderColor: "rgba(255,255,255,0.18)",
+              color: "#f2f4f8",
+              backdropFilter: "blur(6px)",
+              WebkitBackdropFilter: "blur(6px)",
+            }}
+          />
         </div>
         <div style={{ position: "relative", zIndex: 2, transform: "translateY(-40px)", padding: "0 16px" }}>
           <Login splash />

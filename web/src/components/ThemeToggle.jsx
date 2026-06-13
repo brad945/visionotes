@@ -4,7 +4,7 @@ import { useTheme } from "../theme/ThemeProvider";
  * Light/dark toggle. Renders the icon of the theme you'd switch TO, with an
  * accessible label that says the action (not the current state).
  */
-export default function ThemeToggle() {
+export default function ThemeToggle({ style }) {
   const { theme, toggleTheme } = useTheme();
   const isDark = theme === "dark";
   const label = `Switch to ${isDark ? "light" : "dark"} mode`;
@@ -16,7 +16,7 @@ export default function ThemeToggle() {
       className="vn-btn vn-btn--ghost"
       aria-label={label}
       title={label}
-      style={{ padding: "6px 9px", lineHeight: 0 }}
+      style={{ padding: "6px 9px", lineHeight: 0, ...style }}
     >
       {isDark ? (
         // Sun — switch to light
