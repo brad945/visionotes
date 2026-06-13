@@ -1,0 +1,131 @@
+/* HeroField — scroll-pinned particle hero. Self-contained dark/branded section
+   with its own palette + fonts (independent of the app's light/dark theme). */
+
+@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400&display=swap");
+
+.hero-track,
+.hero-fill {
+  --hero-bg: #07090d;
+  --hero-ink: #f2f4f8;
+  --hero-muted: #6b7689;
+  --hero-faint: #aab4c5;
+  --hero-accent: #5eead4;
+
+  background: var(--hero-bg);
+  color: var(--hero-ink);
+  font-family: "Space Grotesk", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.hero-track {
+  position: relative;
+  height: 320vh;
+}
+
+/* Background mode: fill the (positioned) parent, canvas only. */
+.hero-fill {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.hero-pin {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  width: 100%;
+  overflow: hidden;
+}
+
+.hero-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.hero-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 0 max(2.5rem, 8vw);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.hero-eyebrow {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.7rem;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: var(--hero-accent);
+  margin-bottom: 1.5rem;
+}
+
+.hero-headline {
+  font-family: "Space Grotesk", system-ui, sans-serif;
+  font-size: clamp(2.4rem, 6vw, 4.6rem);
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  max-width: 14ch;
+  color: var(--hero-ink);
+}
+.hero-thin {
+  font-weight: 400;
+  color: var(--hero-faint);
+}
+
+.hero-lead {
+  margin-top: 1.6rem;
+  color: var(--hero-muted);
+  font-size: 1.05rem;
+  line-height: 1.6;
+  max-width: 34ch;
+}
+
+.hero-cue {
+  position: absolute;
+  bottom: 2.2rem;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.66rem;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  color: var(--hero-muted);
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
+}
+.hero-cue-line {
+  width: 1px;
+  height: 34px;
+  background: linear-gradient(var(--hero-muted), transparent);
+  animation: hero-drip 2s infinite ease-in-out;
+}
+
+@keyframes hero-drip {
+  0%,
+  100% {
+    transform: scaleY(0.4);
+    opacity: 0.4;
+    transform-origin: top;
+  }
+  50% {
+    transform: scaleY(1);
+    opacity: 1;
+    transform-origin: top;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-cue-line {
+    animation: none;
+  }
+}

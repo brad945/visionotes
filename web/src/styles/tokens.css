@@ -77,8 +77,10 @@
    wired in SessionDetail). NOTE the role inversions:
      - *-deep tokens go BRIGHTER than the base (small text/links/errors on dark)
      - *-soft tokens go to dark tints (selection / focus halo / active-bar glow)
-   All foreground/muted/-deep pairs checked ≥ 4.5:1 (AA) on their backgrounds. */
-:root[data-theme="dark"] {
+   All foreground/muted/-deep pairs checked ≥ 4.5:1 (AA) on their backgrounds.
+   Selector is attribute-only (not :root-scoped) so dark can also be forced on a
+   subtree, e.g. the login splash, regardless of the app-wide theme. */
+[data-theme="dark"] {
   /* Neutral — tonal layering: sunken (darkest) < paper < surface (lifted) */
   --paper: #0e1315;
   --surface: #1a2123;
