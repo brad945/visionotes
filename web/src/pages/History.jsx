@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { listSessions, deleteSession } from "../api";
 import ConfirmDialog from "../components/ConfirmDialog";
@@ -23,8 +23,10 @@ export default function History() {
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [pendingDelete, setPendingDelete] = useState(null); // session object pending confirm
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const selectAllRef = useRef(null);
 
   useEffect(() => {
     listSessions()
@@ -33,19 +35,39 @@ export default function History() {
       .finally(() => setLoading(false));
   }, []);
 
+  const allSelected = sessions.length > 0 && selectedIds.size === sessions.length;
+  const someSelected = selectedIds.size > 0 && !allSelected;
+
+  // Native checkboxes can't show "indeterminate" via an attribute.
+  useEffect(() => {
+    if (selectAllRef.current) selectAllRef.current.indeterminate = someSelected;
+  }, [someSelected]);
+
+  function toggleOne(id) {
+    setSelectedIds((cur) => {
+      const next = new Set(cur);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
+
+  function toggleAll() {
+    setSelectedIds(allSelected ? new Set() : new Set(sessions.map((s) => s.id)));
+  }
+
   async function confirmDelete() {
-    if (!pendingDelete) return;
+    const ids = [...selectedIds];
+    if (!ids.length) return;
     setDeleting(true);
     setError(null);
-    try {
-      await deleteSession(pendingDelete.id);
-      setSessions((rows) => rows.filter((r) => r.id !== pendingDelete.id));
-      setPendingDelete(null);
-    } catch (e) {
-      setError(`Delete failed: ${e.message}`);
-    } finally {
-      setDeleting(false);
-    }
+    const results = await Promise.allSettled(ids.map((id) => deleteSession(id)));
+    const ok = new Set(ids.filter((_, i) => results[i].status === "fulfilled"));
+    setSessions((rows) => rows.filter((r) => !ok.has(r.id)));
+    setSelectedIds((cur) => new Set([...cur].filter((id) => !ok.has(id))));
+    const failed = ids.length - ok.size;
+    if (failed) setError(`${failed} session${failed > 1 ? "s" : ""} couldn't be deleted.`);
+    setDeleting(false);
+    setConfirmOpen(false);
   }
 
   if (loading) return <main style={{ padding: "32px 0" }} className="vn-muted">Loading sessions…</main>;
@@ -54,11 +76,19 @@ export default function History() {
 
   const thStyle = { padding: "10px 12px", textAlign: "left" };
   const tdStyle = { padding: "12px 12px", verticalAlign: "middle" };
+  const count = selectedIds.size;
 
   return (
     <main style={{ padding: "32px 0" }}>
       <p className="vn-label" style={{ marginBottom: 6 }}>History</p>
-      <h1 style={{ marginBottom: 20 }}>Session History</h1>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, marginBottom: 20, minHeight: 40 }}>
+        <h1 style={{ margin: 0 }}>Session History</h1>
+        {count > 0 && (
+          <button type="button" className="vn-btn vn-btn--stop" onClick={() => setConfirmOpen(true)}>
+            Delete selected ({count})
+          </button>
+        )}
+      </div>
 
       {error && sessions.length > 0 && (
         <p style={{ color: "var(--signal-deep)", marginBottom: 12, fontSize: "0.875rem" }}>{error}</p>
@@ -70,6 +100,17 @@ export default function History() {
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.95rem" }}>
           <thead>
             <tr style={{ borderBottom: "1px solid var(--line-strong)" }}>
+              <th style={{ ...thStyle, width: 40 }}>
+                <input
+                  ref={selectAllRef}
+                  type="checkbox"
+                  className="vn-accent-control"
+                  checked={allSelected}
+                  onChange={toggleAll}
+                  aria-label="Select all sessions"
+                  style={{ width: 16, height: 16, margin: 0, cursor: "pointer" }}
+                />
+              </th>
               <th className="vn-label" style={thStyle}>Date</th>
               <th className="vn-label" style={thStyle}>Duration</th>
               <th className="vn-label" style={thStyle}>Faults</th>
@@ -77,51 +118,49 @@ export default function History() {
             </tr>
           </thead>
           <tbody>
-            {sessions.map((s) => (
-              <tr key={s.id} style={{ borderBottom: "1px solid var(--line)" }}>
-                <td style={tdStyle}>{formatDate(s.started_at)}</td>
-                <td style={tdStyle} className="vn-data">{formatDuration(s.duration_seconds)}</td>
-                <td style={tdStyle} className="vn-data">{s.total_faults}</td>
-                <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap" }}>
-                  <Link to={`/history/${s.id}`} style={{ fontWeight: 500 }}>
-                    View →
-                  </Link>
-                  <button
-                    type="button"
-                    onClick={() => setPendingDelete(s)}
-                    aria-label={`Delete session from ${formatDate(s.started_at)}`}
-                    style={{
-                      marginLeft: 16,
-                      background: "none",
-                      border: "none",
-                      padding: 0,
-                      cursor: "pointer",
-                      fontSize: "0.95rem",
-                      fontWeight: 500,
-                      color: "var(--signal-deep)",
-                    }}
-                  >
-                    Delete
-                  </button>
-                </td>
-              </tr>
-            ))}
+            {sessions.map((s) => {
+              const checked = selectedIds.has(s.id);
+              return (
+                <tr
+                  key={s.id}
+                  style={{
+                    borderBottom: "1px solid var(--line)",
+                    background: checked ? "var(--surface-sunken)" : "transparent",
+                  }}
+                >
+                  <td style={tdStyle}>
+                    <input
+                      type="checkbox"
+                      className="vn-accent-control"
+                      checked={checked}
+                      onChange={() => toggleOne(s.id)}
+                      aria-label={`Select session from ${formatDate(s.started_at)}`}
+                      style={{ width: 16, height: 16, margin: 0, cursor: "pointer" }}
+                    />
+                  </td>
+                  <td style={tdStyle}>{formatDate(s.started_at)}</td>
+                  <td style={tdStyle} className="vn-data">{formatDuration(s.duration_seconds)}</td>
+                  <td style={tdStyle} className="vn-data">{s.total_faults}</td>
+                  <td style={{ ...tdStyle, textAlign: "right" }}>
+                    <Link to={`/history/${s.id}`} style={{ fontWeight: 500 }}>
+                      View →
+                    </Link>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       )}
 
       <ConfirmDialog
-        open={!!pendingDelete}
-        title="Delete this session?"
-        message={
-          pendingDelete
-            ? `The session from ${formatDate(pendingDelete.started_at)} and its fault data will be permanently removed. This can't be undone.`
-            : ""
-        }
-        confirmLabel="Delete"
+        open={confirmOpen}
+        title={`Delete ${count} session${count > 1 ? "s" : ""}?`}
+        message={`The selected session${count > 1 ? "s" : ""} and their fault data will be permanently removed. This can't be undone.`}
+        confirmLabel={`Delete ${count}`}
         busy={deleting}
         onConfirm={confirmDelete}
-        onCancel={() => !deleting && setPendingDelete(null)}
+        onCancel={() => !deleting && setConfirmOpen(false)}
       />
     </main>
   );
