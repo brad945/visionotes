@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from "react";
-import { useParams, Link } from "react-router-dom";
-import { getSession } from "../api";
+import { useParams, Link, useNavigate } from "react-router-dom";
+import { getSession, deleteSession } from "../api";
+import ConfirmDialog from "../components/ConfirmDialog";
 
 const SIGNIFICANT_THRESHOLD_MS = 500;
 
@@ -335,6 +336,9 @@ export default function SessionDetail() {
   const [error, setError] = useState(null);
   const [showDetailed, setShowDetailed] = useState(false);
   const [selectedFaultKeys, setSelectedFaultKeys] = useState(new Set());
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const navigate = useNavigate();
 
   useEffect(() => {
     getSession(sessionId)
@@ -342,6 +346,19 @@ export default function SessionDetail() {
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   }, [sessionId]);
+
+  async function handleDelete() {
+    setDeleting(true);
+    setError(null);
+    try {
+      await deleteSession(sessionId);
+      navigate("/history");
+    } catch (e) {
+      setError(`Delete failed: ${e.message}`);
+      setDeleting(false);
+      setConfirmOpen(false);
+    }
+  }
 
   useEffect(() => {
     setSelectedFaultKeys(new Set());
@@ -402,7 +419,26 @@ export default function SessionDetail() {
     <main style={{ padding: "32px 0" }}>
       <Link to="/history" style={{ fontSize: 14 }}>← Back to History</Link>
 
-      <h1 style={{ marginTop: 12 }}>Session Detail</h1>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, marginTop: 12 }}>
+        <h1 style={{ margin: 0 }}>Session Detail</h1>
+        <button type="button" className="vn-btn vn-btn--ghost" onClick={() => setConfirmOpen(true)}>
+          Delete
+        </button>
+      </div>
+
+      {error && (
+        <p style={{ color: "var(--signal-deep)", marginTop: 12, fontSize: "0.875rem" }}>{error}</p>
+      )}
+
+      <ConfirmDialog
+        open={confirmOpen}
+        title="Delete this session?"
+        message="This session and its fault data will be permanently removed. This can't be undone."
+        confirmLabel="Delete"
+        busy={deleting}
+        onConfirm={handleDelete}
+        onCancel={() => !deleting && setConfirmOpen(false)}
+      />
 
       <div style={{ display: "flex", gap: 32, flexWrap: "wrap", margin: "12px 0 24px", fontSize: "0.95rem" }}>
         <div><span className="vn-label">Started</span><div className="vn-data" style={{ marginTop: 2 }}>{new Date(session.started_at).toLocaleString()}</div></div>

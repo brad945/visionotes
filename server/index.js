@@ -158,5 +158,22 @@ app.get("/sessions/:id", async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// DELETE /sessions/:id — delete a session (fault_events cascade via FK)
+// ---------------------------------------------------------------------------
+app.delete("/sessions/:id", async (req, res) => {
+  const { data, error } = await supabase
+    .from("sessions")
+    .delete()
+    .eq("id", req.params.id)
+    .eq("user_id", req.userId)
+    .select("id")
+    .single();
+
+  // PGRST116 = no row matched (wrong id or not the owner)
+  if (error) return res.status(error.code === "PGRST116" ? 404 : 500).json({ error: error.message });
+  res.json({ deleted: data.id });
+});
+
+// ---------------------------------------------------------------------------
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => console.log(`VisioNotes API listening on :${PORT}`));

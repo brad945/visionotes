@@ -65,3 +65,12 @@ export async function getSession(sessionId) {
   if (!res.ok) throw new Error((await res.json()).error);
   return res.json();
 }
+
+export async function deleteSession(sessionId) {
+  const res = await fetch(`${API_BASE}/sessions/${sessionId}`, {
+    method: "DELETE",
+    headers: await authHeaders(),
+  });
+  if (!res.ok) throw new Error((await res.json()).error);
+  return res.json(); // { deleted: id }
+}
