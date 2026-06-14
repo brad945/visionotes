@@ -1,27 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useSearchParams, useNavigate } from "react-router-dom";
 import { getSession, listSessions } from "../api";
+import { addGroup } from "../groups";
 
 const SIGNIFICANT_THRESHOLD_MS = 500;
-
-// Saved session groups (per-browser via localStorage).
-const GROUPS_KEY = "vn-session-groups";
-function loadGroups() {
-  try {
-    const v = JSON.parse(localStorage.getItem(GROUPS_KEY));
-    return Array.isArray(v) ? v : [];
-  } catch {
-    return [];
-  }
-}
-function persistGroups(groups) {
-  try {
-    localStorage.setItem(GROUPS_KEY, JSON.stringify(groups));
-  } catch {
-    /* storage unavailable */
-  }
-}
-
 const CATEGORY_ORDER = [
   { key: "left_arm_posture", hand: "left", fault_type: "arm_posture" },
   { key: "left_collapsed_wrist", hand: "left", fault_type: "collapsed_wrist" },
@@ -123,36 +105,17 @@ export default function Visualize() {
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [error, setError] = useState(null);
   const [searchParams] = useSearchParams();
-  const [savedGroups, setSavedGroups] = useState(loadGroups);
   const [naming, setNaming] = useState(false);
   const [groupName, setGroupName] = useState("");
+  const navigate = useNavigate();
 
   function saveGroup() {
     const ids = [...selectedIds];
     if (!ids.length) return;
-    const name = groupName.trim() || `Group of ${ids.length}`;
-    const group = {
-      id: (crypto.randomUUID && crypto.randomUUID()) || String(Date.now()),
-      name,
-      ids,
-      savedAt: new Date().toISOString(),
-    };
-    const next = [group, ...savedGroups];
-    setSavedGroups(next);
-    persistGroups(next);
+    addGroup(groupName.trim() || `Group of ${ids.length}`, ids);
     setNaming(false);
     setGroupName("");
-  }
-
-  function loadGroup(group) {
-    const existing = new Set(sessions.map((s) => s.id));
-    setSelectedIds(new Set(group.ids.filter((id) => existing.has(id))));
-  }
-
-  function deleteGroup(id) {
-    const next = savedGroups.filter((g) => g.id !== id);
-    setSavedGroups(next);
-    persistGroups(next);
+    navigate("/groups"); // saved groups live on their own route
   }
 
   useEffect(() => {
@@ -267,43 +230,6 @@ export default function Visualize() {
           <button type="button" className="vn-btn vn-btn--ghost" onClick={() => { setNaming(false); setGroupName(""); }}>
             Cancel
           </button>
-        </div>
-      )}
-
-      {savedGroups.length > 0 && (
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 18 }}>
-          <span className="vn-label">Saved</span>
-          {savedGroups.map((g) => (
-            <span
-              key={g.id}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 4,
-                border: "1px solid var(--line)",
-                borderRadius: "var(--r-pill)",
-                padding: "3px 4px 3px 12px",
-                background: "var(--surface)",
-              }}
-            >
-              <button
-                type="button"
-                onClick={() => loadGroup(g)}
-                title={`Load "${g.name}"`}
-                style={{ background: "none", border: "none", padding: 0, cursor: "pointer", color: "var(--ink)", font: "inherit" }}
-              >
-                {g.name} <span className="vn-muted">({g.ids.length})</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => deleteGroup(g.id)}
-                aria-label={`Delete saved group ${g.name}`}
-                style={{ background: "none", border: "none", padding: "0 4px", cursor: "pointer", color: "var(--ink-muted)", fontSize: 16, lineHeight: 1 }}
-              >
-                ×
-              </button>
-            </span>
-          ))}
         </div>
       )}
 

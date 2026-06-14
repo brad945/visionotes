@@ -21,6 +21,7 @@ export default function Navbar() {
       <NavLink to="/" style={linkStyle} end>Practice</NavLink>
       <NavLink to="/history" style={linkStyle}>History</NavLink>
       <NavLink to="/visualize" style={linkStyle}>Visualize</NavLink>
+      <NavLink to="/groups" style={linkStyle}>Groups</NavLink>
       <ThemeToggle />
       {user && (
         <button onClick={() => supabase.auth.signOut()} className="vn-btn vn-btn--ghost">
