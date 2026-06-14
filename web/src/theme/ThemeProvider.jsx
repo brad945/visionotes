@@ -9,6 +9,7 @@
  */
 
 import { createContext, useContext, useEffect, useRef, useState, useCallback } from "react";
+import { flushSync } from "react-dom";
 
 const STORAGE_KEY = "vn-theme"; // keep in sync with the inline script in index.html
 
@@ -25,30 +26,21 @@ function getInitialTheme() {
   return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
+function applyDom(theme) {
+  document.documentElement.setAttribute("data-theme", theme);
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute("content", theme === "dark" ? "#0e1315" : "#f7f8f8");
+}
+
 export default function ThemeProvider({ children }) {
   const [theme, setTheme] = useState(getInitialTheme);
-  const firstRun = useRef(true);
-  const fadeTimer = useRef(null);
+  const themeRef = useRef(theme);
+  themeRef.current = theme;
 
-  // Apply the theme to <html> + sync the mobile browser-chrome color.
+  // Apply on mount + any non-toggle change (e.g. following the OS preference).
   useEffect(() => {
-    const root = document.documentElement;
-
-    // On a real switch (not initial mount), add .vn-theming so every element
-    // eases its colors during the change, then remove it once the fade is done.
-    if (!firstRun.current) {
-      root.classList.add("vn-theming");
-      clearTimeout(fadeTimer.current);
-      fadeTimer.current = setTimeout(() => root.classList.remove("vn-theming"), 550);
-    }
-    firstRun.current = false;
-
-    root.setAttribute("data-theme", theme);
-    const meta = document.querySelector('meta[name="theme-color"]');
-    if (meta) meta.setAttribute("content", theme === "dark" ? "#0e1315" : "#f7f8f8");
+    applyDom(theme);
   }, [theme]);
-
-  useEffect(() => () => clearTimeout(fadeTimer.current), []);
 
   // Follow OS changes only while the user hasn't made an explicit choice.
   useEffect(() => {
@@ -62,15 +54,26 @@ export default function ThemeProvider({ children }) {
   }, []);
 
   const toggleTheme = useCallback(() => {
-    setTheme((t) => {
-      const next = t === "dark" ? "light" : "dark";
-      try {
-        localStorage.setItem(STORAGE_KEY, next); // explicit choice → persist, stop following OS
-      } catch {
-        /* storage unavailable (private mode) — theme still applies for the session */
-      }
-      return next;
-    });
+    const next = themeRef.current === "dark" ? "light" : "dark";
+    try {
+      localStorage.setItem(STORAGE_KEY, next); // explicit choice → persist, stop following OS
+    } catch {
+      /* storage unavailable (private mode) */
+    }
+
+    // Apply React + DOM changes synchronously so the View Transition snapshots
+    // the new theme, then cross-fades the whole screen old→new.
+    const commit = () => {
+      flushSync(() => setTheme(next));
+      applyDom(next);
+    };
+
+    const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    if (document.startViewTransition && !reduce) {
+      document.startViewTransition(commit);
+    } else {
+      commit();
+    }
   }, []);
 
   return <ThemeContext.Provider value={{ theme, toggleTheme }}>{children}</ThemeContext.Provider>;
