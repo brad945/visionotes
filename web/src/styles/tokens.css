@@ -110,9 +110,17 @@
   color-scheme: dark;
 }
 
-/* Smooth, restrained cross-fade when the theme flips. Honors reduced motion. */
+/* Flowy theme switch: while <html> has .vn-theming (added by ThemeProvider just
+   for the duration of a toggle), every element eases its colors instead of
+   snapping. Scoped to the switch so it never slows down hovers/other state.
+   Honors reduced motion (rule simply doesn't apply). */
 @media (prefers-reduced-motion: no-preference) {
-  body {
-    transition: background-color var(--dur) var(--ease-out), color var(--dur) var(--ease-out);
+  html.vn-theming,
+  html.vn-theming *,
+  html.vn-theming *::before,
+  html.vn-theming *::after {
+    transition: background-color 500ms ease, color 500ms ease,
+      border-color 500ms ease, fill 500ms ease, stroke 500ms ease,
+      box-shadow 500ms ease !important;
   }
 }

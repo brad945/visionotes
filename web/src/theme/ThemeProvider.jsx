@@ -8,7 +8,7 @@
  * attribute before React mounts; it MUST use the same STORAGE_KEY as here.
  */
 
-import { createContext, useContext, useEffect, useState, useCallback } from "react";
+import { createContext, useContext, useEffect, useRef, useState, useCallback } from "react";
 
 const STORAGE_KEY = "vn-theme"; // keep in sync with the inline script in index.html
 
@@ -27,13 +27,28 @@ function getInitialTheme() {
 
 export default function ThemeProvider({ children }) {
   const [theme, setTheme] = useState(getInitialTheme);
+  const firstRun = useRef(true);
+  const fadeTimer = useRef(null);
 
   // Apply the theme to <html> + sync the mobile browser-chrome color.
   useEffect(() => {
-    document.documentElement.setAttribute("data-theme", theme);
+    const root = document.documentElement;
+
+    // On a real switch (not initial mount), add .vn-theming so every element
+    // eases its colors during the change, then remove it once the fade is done.
+    if (!firstRun.current) {
+      root.classList.add("vn-theming");
+      clearTimeout(fadeTimer.current);
+      fadeTimer.current = setTimeout(() => root.classList.remove("vn-theming"), 550);
+    }
+    firstRun.current = false;
+
+    root.setAttribute("data-theme", theme);
     const meta = document.querySelector('meta[name="theme-color"]');
     if (meta) meta.setAttribute("content", theme === "dark" ? "#0e1315" : "#f7f8f8");
   }, [theme]);
+
+  useEffect(() => () => clearTimeout(fadeTimer.current), []);
 
   // Follow OS changes only while the user hasn't made an explicit choice.
   useEffect(() => {
