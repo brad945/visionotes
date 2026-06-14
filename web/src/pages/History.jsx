@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { listSessions, deleteSession } from "../api";
 import ConfirmDialog from "../components/ConfirmDialog";
 
@@ -27,6 +27,12 @@ export default function History() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const selectAllRef = useRef(null);
+  const navigate = useNavigate();
+
+  function visualizeSelected() {
+    if (!selectedIds.size) return;
+    navigate(`/visualize?ids=${[...selectedIds].join(",")}`);
+  }
 
   useEffect(() => {
     listSessions()
@@ -81,12 +87,17 @@ export default function History() {
   return (
     <main style={{ padding: "32px 0" }}>
       <p className="vn-label" style={{ marginBottom: 6 }}>History</p>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, marginBottom: 20, minHeight: 40 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, marginBottom: 20, minHeight: 40, flexWrap: "wrap" }}>
         <h1 style={{ margin: 0 }}>Session History</h1>
         {count > 0 && (
-          <button type="button" className="vn-btn vn-btn--stop" onClick={() => setConfirmOpen(true)}>
-            Delete selected ({count})
-          </button>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button type="button" className="vn-btn vn-btn--primary" onClick={visualizeSelected}>
+              Visualize together ({count})
+            </button>
+            <button type="button" className="vn-btn vn-btn--stop" onClick={() => setConfirmOpen(true)}>
+              Delete selected ({count})
+            </button>
+          </div>
         )}
       </div>
 

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { getSession, listSessions } from "../api";
 
 const SIGNIFICANT_THRESHOLD_MS = 500;
@@ -103,16 +103,28 @@ export default function Visualize() {
   const [loading, setLoading] = useState(true);
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [error, setError] = useState(null);
+  const [searchParams] = useSearchParams();
 
   useEffect(() => {
+    // Sessions chosen in the History tab arrive as ?ids=a,b,c — pre-select those;
+    // otherwise default to the 5 most recent.
+    const requested = (searchParams.get("ids") || "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
     listSessions()
       .then((rows) => {
         setSessions(rows);
-        setSelectedIds(new Set(rows.slice(0, 5).map((session) => session.id)));
+        const ids = new Set(rows.map((r) => r.id));
+        const preselect = requested.filter((id) => ids.has(id));
+        setSelectedIds(
+          new Set(preselect.length ? preselect : rows.slice(0, 5).map((session) => session.id))
+        );
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   useEffect(() => {
     const missing = [...selectedIds].filter((id) => !details[id]);
