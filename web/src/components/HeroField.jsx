@@ -411,6 +411,7 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
           joints: joints.map(toCanvas),
           tip: toCanvas(joints[joints.length - 1]),
           w: f.w,
+          capR: f.w * unit * 2.2, // small zone (≈ knuckle-cap size) around the MCP
         });
       }
 
@@ -424,14 +425,10 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
       // `against`. Dots are scattered off the line (perpendicular jitter), sized
       // unevenly, and spaced unevenly — smaller + denser than a clean stroke — so
       // the silhouette reads organic/hand-stippled, not stamped on a perfect path.
-      const outline = (poly, against, seed, open) => {
+      const outline = (poly, against, seed, baseGate) => {
         let carry = 0;
         let k = seed;
-        // open polyline (fingers) → walk segments but DON'T close the loop, so the
-        // base line across the knuckle is never drawn (the finger reads as an open
-        // "U" anchored at its own knuckle). Closed (body) → wrap as usual.
-        const segs = open ? poly.length - 1 : poly.length;
-        for (let i = 0; i < segs; i++) {
+        for (let i = 0; i < poly.length; i++) {
           const a = poly[i];
           const b = poly[(i + 1) % poly.length];
           const dx = b[0] - a[0];
@@ -451,6 +448,22 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
               if (pointInPoly(x, y, against[s])) {
                 hidden = true;
                 break;
+              }
+            }
+            // knuckle-merge: in a SMALL zone around the MCP, hide cap/base dots that
+            // fall inside the hand body — so a finger whose knuckle bulges INTO the
+            // wrist/palm (e.g. the index reaching across) merges cleanly there, while
+            // a knuckle that caps on the silhouette edge keeps its rounded outline.
+            if (!hidden && baseGate) {
+              const bx = x - baseGate.cx;
+              const by = y - baseGate.cy;
+              if (bx * bx + by * by < baseGate.r2) {
+                for (let s = 0; s < baseGate.polys.length; s++) {
+                  if (pointInPoly(x, y, baseGate.polys[s])) {
+                    hidden = true;
+                    break;
+                  }
+                }
               }
             }
             if (!hidden) {
@@ -505,9 +518,17 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
         ctx.arc(job.tip[0], job.tip[1], job.w * TIP_RATIO * unit * 0.5, 0, Math.PI * 2);
         ctx.fill();
         // outline now (closed silhouette, both ends capped). Finger-vs-finger
-        // occlusion is handled by the later fills painting over it; no suppression.
+        // occlusion is handled by the later fills painting over it. The only
+        // suppression is the knuckle-merge gate: clear the cap where it bulges into
+        // the wrist/palm, so a finger reaching across merges in at the knuckle.
         ctx.fillStyle = dot;
-        outline(job.poly, [], 67.7 + fi * 100);
+        const mcp = job.joints[0];
+        outline(job.poly, [], 67.7 + fi * 100, {
+          polys: bodyPolys,
+          cx: mcp[0],
+          cy: mcp[1],
+          r2: job.capR * job.capR,
+        });
       }
 
       rafId = requestAnimationFrame(draw);
