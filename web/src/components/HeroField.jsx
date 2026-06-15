@@ -31,7 +31,7 @@ const FINGERS = [
   // PALM knuckle — it anchors the palm arch / dome. The FINGER itself is drawn from
   // mcp + FINGER_OFFSET, so the fingers can sit lower/right of the palm WITHOUT
   // dragging the palm or wrist down (those stay put).
-  { name: "index", mcp: [0.56, 0.5], rest: -4 * DEG, seg: [0.4, 0.28, 0.2], prof: [0.62, 1.08, 1.3], restCurl: -27 * DEG, reachW: 1, w: 0.08 },
+  { name: "index", mcp: [0.56, 0.5], rest: -4 * DEG, seg: [0.428, 0.3, 0.214], prof: [0.62, 1.08, 1.3], restCurl: -27 * DEG, reachW: 1, w: 0.0899 },
   { name: "middle", mcp: [0.72, 0.54], rest: 3 * DEG, seg: [0.44, 0.3, 0.21], prof: [0.8, 1.2, 1.0], restCurl: -27 * DEG, reachW: 1, w: 0.084 },
   { name: "ring", mcp: [0.87, 0.5], rest: 10 * DEG, seg: [0.4, 0.28, 0.2], prof: [0.5, 1.34, 1.16], restCurl: -27 * DEG, reachW: 1, w: 0.077 },
   { name: "pinky", mcp: [1.0, 0.42], rest: 17 * DEG, seg: [0.3, 0.22, 0.16], prof: [0.72, 0.96, 1.5], restCurl: -27 * DEG, reachW: 1, w: 0.064 },
