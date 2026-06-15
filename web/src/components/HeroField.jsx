@@ -74,6 +74,48 @@ const IDLE_AFTER_MS = 2000; // cursor sitting still this long → relax to the r
 const IDLE_FADE_MS = 700; // ease into that idle over this window (no snap)
 const CLICK_MS = 220; // duration of the index "press" tap when the Send-link button is clicked
 const CLICK_DROP = 1.6 * DEG; // how far the index dips down at the peak of the press (very subtle)
+// Idle "playing piano": a looping PHRASE through real keyboard gestures — an
+// ascending scale (thumb→pinky), a chord, an arpeggio, a descending scale, a chord.
+// Each event strikes its finger(s); the arm drifts laterally to follow the run and
+// the wrist dips on each strike (weight into the key), like real technique.
+const PIANO_PHRASE = [
+  { t: 0, f: [0] }, { t: 1, f: [1] }, { t: 2, f: [2] }, { t: 3, f: [3] }, { t: 4, f: [4] }, // scale up
+  { t: 5.5, f: [0, 2, 4] }, // chord (triad)
+  { t: 7, f: [0] }, { t: 7.6, f: [1] }, { t: 8.2, f: [3] }, { t: 8.8, f: [4] }, // arpeggio up
+  { t: 10, f: [4] }, { t: 11, f: [3] }, { t: 12, f: [2] }, { t: 13, f: [1] }, { t: 14, f: [0] }, // scale down
+  { t: 15.5, f: [1, 3] }, // chord
+];
+const PIANO_PHRASE_BEATS = 17; // loop length in beats
+const PIANO_BPS = 2.4; // beats per second (tempo)
+const PIANO_CURL = 7 * DEG; // per-knuckle flex at a key strike
+const PIANO_SHIFT = 13; // px the hand drifts laterally per finger-step (arm follows the run)
+const PIANO_DROP = 7; // px the wrist dips on a strike (arm weight into the key)
+// derive: per-finger sorted strike times + each event's lateral position (avg finger − 2).
+const PIANO_STRIKES = [[], [], [], [], []];
+for (const ev of PIANO_PHRASE) {
+  ev.lat = ev.f.reduce((s, x) => s + x, 0) / ev.f.length - 2;
+  for (const fi of ev.f) PIANO_STRIKES[fi].push(ev.t);
+}
+PIANO_STRIKES.forEach((a) => a.sort((x, y) => x - y));
+// triangle strike envelope: fast attack, slower release (a key press → lift). dt seconds.
+const pianoEnv = (dt) => {
+  if (dt < 0) return 0;
+  if (dt < 0.05) return dt / 0.05;
+  if (dt < 0.39) return 1 - (dt - 0.05) / 0.34;
+  return 0;
+};
+// strike amount (0–1) for finger i at the given phrase time (beats), with wrap-around.
+const pianoStrike = (i, phraseT) => {
+  const times = PIANO_STRIKES[i];
+  if (!times.length) return 0;
+  let recent = -1;
+  for (const tt of times) {
+    if (tt <= phraseT) recent = tt;
+    else break;
+  }
+  const dtBeats = recent < 0 ? phraseT + (PIANO_PHRASE_BEATS - times[times.length - 1]) : phraseT - recent;
+  return pianoEnv(dtBeats / PIANO_BPS);
+};
 const FINGER_MIN = -104 * DEG; // anatomical clamp on the FINAL base angle (down)
 const FINGER_MAX = 14 * DEG; // anatomical clamp (up) — no wrist hyperextension
 const INDEX_MAX = 42 * DEG; // the index alone may rise higher, to point up at a high cursor
@@ -194,6 +236,7 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
     let lastMove = t0; // timestamp of the last cursor movement (for the idle timeout)
     let armLift = 0; // eased: the whole hand pivots up at the elbow to reach high cursors
     let lungeX = 0, lungeY = 0; // eased translation of the whole model toward the Send button
+    let pianoX = 0, pianoY = 0; // eased model offset for the idle piano (lateral run + wrist dip)
     let lastIdxTip = null; // index fingertip (canvas px) from the previous frame
     let clickT = -1e9; // timestamp of the last Send-link click (for the index press tap)
 
@@ -229,10 +272,10 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
     // local (hand-frame) -> canvas px, with the current arm lift applied.
     const toCanvas = (p) => {
       const q = armLift ? liftLocal(p, armLift) : p;
-      return [cx + lungeX + q[0] * unit, wristY + lungeY - q[1] * unit];
+      return [cx + lungeX + pianoX + q[0] * unit, wristY + lungeY + pianoY - q[1] * unit];
     };
     // canvas px -> local (un-lifted frame; the cursor lives here)
-    const toLocal = (x, y) => [(x - cx - lungeX) / unit, (wristY + lungeY - y) / unit];
+    const toLocal = (x, y) => [(x - cx - lungeX - pianoX) / unit, (wristY + lungeY + pianoY - y) / unit];
 
     function fingerJoints(mcp, base, curl, seg, prof) {
       prof = prof || (seg.length === 2 ? CURL_PROFILE2 : CURL_PROFILE3);
@@ -339,6 +382,29 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
       // Idle when the cursor is too far left OR hasn't moved for IDLE_AFTER_MS.
       const idleActive = 1 - smoothstep(IDLE_AFTER_MS, IDLE_AFTER_MS + IDLE_FADE_MS, now - lastMove);
       const front = lc ? smoothstep(FRONT_LO, FRONT_HI, lc[0]) * idleActive : 0;
+
+      // Idle piano: run the phrase, dip the wrist on strikes (weight) and drift the
+      // arm laterally toward the most-recent note (so it "follows" the run).
+      const pianoGate = 1 - front; // plays in the idle pose, fades while tracking
+      const phraseT = (t * PIANO_BPS) % PIANO_PHRASE_BEATS;
+      const pianoFlexArr = [0, 0, 0, 0, 0];
+      if (pianoGate > 0.01) {
+        let strkSum = 0;
+        let recentEv = PIANO_PHRASE[PIANO_PHRASE.length - 1];
+        for (const ev of PIANO_PHRASE) {
+          if (ev.t <= phraseT) recentEv = ev;
+          else break;
+        }
+        for (let si = 0; si < 5; si++) {
+          pianoFlexArr[si] = pianoStrike(si, phraseT);
+          strkSum += pianoFlexArr[si];
+        }
+        pianoX += (recentEv.lat * PIANO_SHIFT * pianoGate - pianoX) * 0.07;
+        pianoY += (Math.min(strkSum, 1.6) * PIANO_DROP * pianoGate - pianoY) * 0.3;
+      } else {
+        pianoX += (0 - pianoX) * 0.07;
+        pianoY += (0 - pianoY) * 0.3;
+      }
 
       // Arm lift: hinge the hand up at the elbow when the cursor is high AND close
       // AND in the good zone. Gated on the RESTING middle knuckle (never the lifted
@@ -497,10 +563,12 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
           const bare = fingerJoints(origin, st.base, st.curl, f.seg, f.prof);
           lastIdxTip = drp(bare[bare.length - 1]);
         }
-        // closed silhouette (tapered sides + rounded tip + knuckle caps). The index
-        // gets a small transient downward dip during a Send-link press.
+        // Transient flexes layered on the eased pose (applied directly, so they stay
+        // crisp): the index dips on a Send-link click, and in the idle pose every
+        // finger "plays piano" — striking down on its own drifting rhythm.
         const pressBase = i === 1 ? clickPress * CLICK_DROP : 0;
-        const joints = fingerJoints(origin, st.base - pressBase, st.curl, f.seg, f.prof);
+        const pianoFlex = pianoFlexArr[i] * PIANO_CURL * pianoGate; // idle key strike for this finger
+        const joints = fingerJoints(origin, st.base - pressBase, st.curl - pianoFlex, f.seg, f.prof);
         const contour = smoothClosed(fingerContour(joints, f.w), 2).map(drp);
         fingerJobs.push({
           poly: contour,
