@@ -31,10 +31,10 @@ const FINGERS = [
   // PALM knuckle — it anchors the palm arch / dome. The FINGER itself is drawn from
   // mcp + FINGER_OFFSET, so the fingers can sit lower/right of the palm WITHOUT
   // dragging the palm or wrist down (those stay put).
-  { name: "index", mcp: [0.56, 0.5], rest: -4 * DEG, seg: [0.428, 0.3, 0.214], prof: [0.62, 1.08, 1.3], restCurl: -27 * DEG, reachW: 1, w: 0.0899 },
-  { name: "middle", mcp: [0.72, 0.54], rest: 3 * DEG, seg: [0.44, 0.3, 0.21], prof: [0.8, 1.2, 1.0], restCurl: -27 * DEG, reachW: 1, w: 0.084 },
-  { name: "ring", mcp: [0.87, 0.5], rest: 10 * DEG, seg: [0.4, 0.28, 0.2], prof: [0.5, 1.34, 1.16], restCurl: -27 * DEG, reachW: 1, w: 0.077 },
-  { name: "pinky", mcp: [1.0, 0.42], rest: 17 * DEG, seg: [0.3, 0.22, 0.16], prof: [0.72, 0.96, 1.5], restCurl: -27 * DEG, reachW: 1, w: 0.064 },
+  { name: "index", mcp: [0.56, 0.5], rest: 14 * DEG, seg: [0.428, 0.3, 0.214], prof: [0.62, 1.08, 1.3], restCurl: -31 * DEG, reachW: 1, w: 0.0899 },
+  { name: "middle", mcp: [0.72, 0.54], rest: 14 * DEG, seg: [0.44, 0.3, 0.21], prof: [0.8, 1.2, 1.0], restCurl: -31 * DEG, reachW: 1, w: 0.084 },
+  { name: "ring", mcp: [0.87, 0.5], rest: 14 * DEG, seg: [0.4, 0.28, 0.2], prof: [0.5, 1.34, 1.16], restCurl: -31 * DEG, reachW: 1, w: 0.077 },
+  { name: "pinky", mcp: [1.0, 0.42], rest: 14 * DEG, seg: [0.3, 0.22, 0.16], prof: [0.72, 0.96, 1.5], restCurl: -31 * DEG, reachW: 1, w: 0.064 },
 ];
 // Fingers are drawn from this offset off their palm knuckle (palm stays put).
 const FINGER_OFFSET = [0.04, -0.06]; // [right, down] — tune the DOWN value to taste
@@ -43,8 +43,19 @@ const FINGER_OFFSET = [0.04, -0.06]; // [right, down] — tune the DOWN value to
 const SHOW_JOINT_DOTS = false;
 const SHOW_TIP_DOTS = false;
 const TIP_RATIO = 0.58; // distal half-width relative to MCP half-width
-const WRIST = [0, 0];
-const ELBOW = [-0.92, -0.03]; // forearm runs back-left to an off-screen elbow
+const WRIST = [0, 0.13]; // slightly raised so the wrist line isn't collapsed
+const ELBOW = [-0.92, 0.1]; // forearm runs back-left to an off-screen elbow
+// Open up the wrist angle: rotate the forearm UP (CCW) and the hand DOWN (CW),
+// each about the wrist. Tune these two to taste (degrees).
+const ARM_RAISE = 5 * DEG; // forearm rotates this much CCW (up) about the wrist
+const HAND_DROOP = 15 * DEG; // hand (palm + fingers) rotates this much CW (down) about the wrist
+const rotW = (p, ang) => {
+  const c = Math.cos(ang);
+  const s = Math.sin(ang);
+  const vx = p[0] - WRIST[0];
+  const vy = p[1] - WRIST[1];
+  return [WRIST[0] + vx * c - vy * s, WRIST[1] + vx * s + vy * c];
+};
 // Tip-IK: each FINGERTIP reaches toward the cursor, and how much the finger
 // CURLS is derived from how close the cursor is relative to the finger's full
 // length — far → straighten to reach; close → curl/crunch to keep the tip near
@@ -55,6 +66,8 @@ const ELBOW = [-0.92, -0.03]; // forearm runs back-left to an off-screen elbow
 const FRONT_LO = 0.54; // cursor AT or LEFT of here (right of the thumb knuckle) → fully
 //                        idle: hand ignores the cursor and rests with idle breathing.
 const FRONT_HI = 0.72; // cursor well right of here → fully engaged (tracks the cursor)
+const IDLE_AFTER_MS = 3000; // cursor sitting still this long → relax to the rest pose too
+const IDLE_FADE_MS = 700; // ease into that idle over this window (no snap)
 const FINGER_MIN = -104 * DEG; // anatomical clamp on the FINAL base angle (down)
 const FINGER_MAX = 14 * DEG; // anatomical clamp (up) — no wrist hyperextension
 const REACH_MIN_RATIO = 0.45; // tightest curl: tip won't pull closer than 45% of length
@@ -158,6 +171,9 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
   useEffect(() => {
     themeRef.current = theme;
   }, [theme]);
+  // Live read-only HUD: the draw loop writes the fingers' current base/curl/spread
+  // here each frame (via ref, so it updates as the cursor moves with no re-render).
+  const hudRef = useRef(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -168,6 +184,7 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
     let mouseX = null, mouseY = null;
     let rafId = null, resizeTimer = null;
     let t0 = performance.now();
+    let lastMove = t0; // timestamp of the last cursor movement (for the idle timeout)
     let armLift = 0; // eased: the whole hand pivots up at the elbow to reach high cursors
 
     // per-finger eased state {base, curl}
@@ -275,7 +292,9 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
       // Behind-gate: relax toward rest when the cursor is to the LEFT (behind the
       // "front": how far into the good zone (right of the thumb knuckle) the
       // cursor is. 0 when it's over the wrist/forearm or behind → fingers relax.
-      const front = lc ? smoothstep(FRONT_LO, FRONT_HI, lc[0]) : 0;
+      // Idle when the cursor is too far left OR hasn't moved for IDLE_AFTER_MS.
+      const idleActive = 1 - smoothstep(IDLE_AFTER_MS, IDLE_AFTER_MS + IDLE_FADE_MS, now - lastMove);
+      const front = lc ? smoothstep(FRONT_LO, FRONT_HI, lc[0]) * idleActive : 0;
 
       // Arm lift: hinge the hand up at the elbow when the cursor is high AND close
       // AND in the good zone. Gated on the RESTING middle knuckle (never the lifted
@@ -297,9 +316,12 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
         if (lc) {
           // Tip-IK: aim THIS fingertip at the cursor. Measured from the finger's
           // LIFTED knuckle (the hand may have hinged up), in the local frame.
+          // hand is displayed drooped by HAND_DROOP, so aim at the cursor rotated
+          // into the un-drooped frame (keeps the fingertip on the real cursor).
+          const aim = rotW(lc, HAND_DROOP);
           const mcp = liftLocal([f.mcp[0] + FINGER_OFFSET[0], f.mcp[1] + FINGER_OFFSET[1]], armLift);
-          const dx = lc[0] - mcp[0];
-          const dy = lc[1] - mcp[1];
+          const dx = aim[0] - mcp[0];
+          const dy = aim[1] - mcp[1];
           const beta = Math.atan2(dy, dx); // direction lifted-MCP → cursor
           const dCursor = Math.hypot(dx, dy);
           const maxLen = f.seg.reduce((s, v) => s + v, 0);
@@ -317,7 +339,7 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
             curl = (ext >= 0 ? ext * THUMB_EXT : ext * THUMB_FLEX) * mag;
           } else if (f.name === "index") {
             // the higher the cursor, the straighter the index → it points at it
-            const high = clamp((lc[1] - INDEX_HIGH_LO) / INDEX_HIGH_RANGE, 0, 1);
+            const high = clamp((aim[1] - INDEX_HIGH_LO) / INDEX_HIGH_RANGE, 0, 1);
             curl = lerp(curl, curl * INDEX_STRAIGHTEN, high);
           }
 
@@ -369,9 +391,9 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
         // into the palm, so the hand widens out of a narrow wrist like a real arm
         // (no fat, abrupt junction). Belly sits nearer the elbow.
         const wEnd = [WRIST[0] + ux * 0.2, WRIST[1] + uy * 0.2]; // slim wrist, tucked into palm
-        const wW = 0.088; // wrist half-width — the narrow waist
+        const wW = 0.1; // wrist half-width — the slim waist
         const wB = 0.16; // forearm belly (thickest point)
-        const wE = 0.138; // elbow half-width
+        const wE = 0.14; // elbow half-width
         const belly = [lerp(wEnd[0], ELBOW[0], 0.55), lerp(wEnd[1], ELBOW[1], 0.55)];
         bodyPolys.push(
           smoothClosed(
@@ -384,7 +406,7 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
               [wEnd[0] - px * wW, wEnd[1] - py * wW],
             ],
             10,
-          ).map(toCanvas),
+          ).map((p) => toCanvas(rotW(p, ARM_RAISE))),
         );
       }
 
@@ -393,18 +415,19 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
       bodyPolys.push(
         smoothClosed(
           [
-            [-0.06, 0.06],
+            [-0.06, 0.24],
             FINGERS[1].mcp,
             FINGERS[2].mcp,
             FINGERS[3].mcp,
             FINGERS[4].mcp,
             [0.92, 0.2],
-            [0.66, 0.04],
-            [0.34, -0.04],
-            [0.06, -0.07],
+            [0.66, 0.08],
+            [0.34, 0.0],
+            [0.16, 0.1], // divot: raised so the underside hollows in behind the thumb
+            [0.02, 0.0],
           ],
           6,
-        ).map(toCanvas),
+        ).map((p) => toCanvas(rotW(p, -HAND_DROOP))),
       );
 
       // fingers — far side (pinky) → near side, thumb last so it sits in front.
@@ -416,11 +439,12 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
         // closed silhouette: tapered sides + rounded TIP + rounded KNUCKLE caps,
         // lightly smoothed (sub-2). Used for both fill and outline, so the finger
         // is fully outlined at both ends (no bare knuckle, no flat connection line).
-        const contour = smoothClosed(fingerContour(joints, f.w), 2).map(toCanvas);
+        const drp = (p) => toCanvas(rotW(p, -HAND_DROOP)); // display the hand drooped at the wrist
+        const contour = smoothClosed(fingerContour(joints, f.w), 2).map(drp);
         fingerJobs.push({
           poly: contour,
-          joints: joints.map(toCanvas),
-          tip: toCanvas(joints[joints.length - 1]),
+          joints: joints.map(drp),
+          tip: drp(joints[joints.length - 1]),
           w: f.w,
           capR: f.w * unit * 2.2, // small zone (≈ knuckle-cap size) around the MCP
         });
@@ -546,6 +570,15 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
         });
       }
 
+      // live read-out: index base, average curl across the 4 long fingers, and the
+      // base-angle spread (fan) between index and pinky — updates as the cursor moves.
+      if (hudRef.current) {
+        const b = state[1].base / DEG;
+        const c = (state[1].curl + state[2].curl + state[3].curl + state[4].curl) / 4 / DEG;
+        const sp = (state[1].base - state[4].base) / 3 / DEG;
+        hudRef.current.textContent = `base ${b.toFixed(1)}°   curl ${c.toFixed(1)}°   spread ${sp.toFixed(1)}°`;
+      }
+
       rafId = requestAnimationFrame(draw);
     }
 
@@ -553,6 +586,7 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
       const r = canvas.getBoundingClientRect();
       mouseX = e.clientX - r.left;
       mouseY = e.clientY - r.top;
+      lastMove = performance.now();
     }
     function onResize() {
       clearTimeout(resizeTimer);
@@ -579,6 +613,17 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
       style={{ background: PALETTES[theme === "light" ? "light" : "dark"].bg }}
     >
       <canvas className="hero-canvas" ref={canvasRef} />
+      {/* Live read-only HUD (top-right): the fingers' current base/curl/spread,
+          updated each frame by the draw loop as the cursor moves. */}
+      <div
+        ref={hudRef}
+        style={{
+          position: "fixed", top: 8, right: 8, zIndex: 99, whiteSpace: "nowrap",
+          background: "rgba(255,255,255,0.94)", color: "#111",
+          padding: "8px 12px", font: "13px monospace", borderRadius: 6,
+          boxShadow: "0 2px 10px rgba(0,0,0,0.25)",
+        }}
+      />
     </div>
   );
 }
