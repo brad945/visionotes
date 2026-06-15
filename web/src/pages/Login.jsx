@@ -1,14 +1,23 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { supabase } from "../supabaseClient";
 
 export default function Login({ splash = false }) {
   const [email, setEmail] = useState("");
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState(null);
+  const [validationMsg, setValidationMsg] = useState(""); // custom popup ABOVE the input
+  const inputRef = useRef(null);
 
   const handleLogin = async (e) => {
     e.preventDefault();
     setError(null);
+    // Custom validation so the "Please fill out this field" popup shows ABOVE the
+    // input (the native bubble only renders below). Uses the browser's own message.
+    if (inputRef.current && !inputRef.current.checkValidity()) {
+      setValidationMsg(inputRef.current.validationMessage);
+      return;
+    }
+    setValidationMsg("");
     const { error: authError } = await supabase.auth.signInWithOtp({ email });
     if (authError) {
       setError(authError.message);
@@ -74,24 +83,64 @@ export default function Login({ splash = false }) {
       <p className="vn-muted" style={{ margin: "8px 0 24px" }}>
         Enter your email and we'll send you a login link.
       </p>
-      <form onSubmit={handleLogin}>
-        <input
-          type="email"
-          placeholder="you@example.com"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-          className="vn-input"
-          style={
-            splash
-              ? {
-                  textAlign: "left",
-                  background: "transparent",
-                  borderColor: "rgba(255,255,255,0.18)",
-                }
-              : { textAlign: "left" }
-          }
-        />
+      <form onSubmit={handleLogin} noValidate>
+        <div style={{ position: "relative" }}>
+          {validationMsg && (
+            <div
+              style={{
+                position: "absolute",
+                bottom: "calc(100% + 9px)",
+                left: 0,
+                background: "#1b1f24",
+                color: "#fff",
+                fontSize: "0.85rem",
+                lineHeight: 1.3,
+                padding: "7px 11px",
+                borderRadius: 6,
+                boxShadow: "0 3px 10px rgba(0,0,0,0.45)",
+                whiteSpace: "nowrap",
+                zIndex: 10,
+                textAlign: "left",
+              }}
+            >
+              {validationMsg}
+              {/* downward arrow */}
+              <span
+                style={{
+                  position: "absolute",
+                  top: "100%",
+                  left: 18,
+                  width: 0,
+                  height: 0,
+                  borderLeft: "6px solid transparent",
+                  borderRight: "6px solid transparent",
+                  borderTop: "6px solid #1b1f24",
+                }}
+              />
+            </div>
+          )}
+          <input
+            ref={inputRef}
+            type="email"
+            placeholder="you@example.com"
+            value={email}
+            onChange={(e) => {
+              setEmail(e.target.value);
+              if (validationMsg) setValidationMsg("");
+            }}
+            required
+            className="vn-input"
+            style={
+              splash
+                ? {
+                    textAlign: "left",
+                    background: "transparent",
+                    borderColor: "rgba(255,255,255,0.18)",
+                  }
+                : { textAlign: "left" }
+            }
+          />
+        </div>
         <button
           type="submit"
           className="vn-btn login-send-btn"
