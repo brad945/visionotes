@@ -44,7 +44,10 @@ const SHOW_JOINT_DOTS = false;
 const SHOW_TIP_DOTS = false;
 const TIP_RATIO = 0.58; // distal half-width relative to MCP half-width
 const WRIST = [0, 0.13]; // slightly raised so the wrist line isn't collapsed
-const ELBOW = [-0.92, 0.1]; // forearm runs back-left to an off-screen elbow
+const ELBOW = [-0.92, 0.1]; // forearm runs back-left to an off-screen elbow (also the lift pivot)
+const FOREARM_END = [-3.2, -0.5]; // the forearm is DRAWN out to here (far past the elbow): far
+//                                   left so it never cuts off when the hand lunges, and LOW so
+//                                   the forearm rises into the wrist in line with the hand (≈180°)
 // Open up the wrist angle: rotate the forearm UP (CCW) and the hand DOWN (CW),
 // each about the wrist. Tune these two to taste (degrees).
 const ARM_RAISE = 0 * DEG; // forearm rotation about the wrist (+ = CCW/up, − = CW/down)
@@ -184,6 +187,8 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
     let t0 = performance.now();
     let lastMove = t0; // timestamp of the last cursor movement (for the idle timeout)
     let armLift = 0; // eased: the whole hand pivots up at the elbow to reach high cursors
+    let lungeX = 0, lungeY = 0; // eased translation of the whole model toward the Send button
+    let lastIdxTip = null; // index fingertip (canvas px) from the previous frame
 
     // per-finger eased state {base, curl}
     const state = FINGERS.map((f) => ({ base: f.rest, curl: f.restCurl }));
@@ -215,10 +220,10 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
     // local (hand-frame) -> canvas px, with the current arm lift applied.
     const toCanvas = (p) => {
       const q = armLift ? liftLocal(p, armLift) : p;
-      return [cx + q[0] * unit, wristY - q[1] * unit];
+      return [cx + lungeX + q[0] * unit, wristY + lungeY - q[1] * unit];
     };
     // canvas px -> local (un-lifted frame; the cursor lives here)
-    const toLocal = (x, y) => [(x - cx) / unit, (wristY - y) / unit];
+    const toLocal = (x, y) => [(x - cx - lungeX) / unit, (wristY + lungeY - y) / unit];
 
     function fingerJoints(mcp, base, curl, seg, prof) {
       prof = prof || (seg.length === 2 ? CURL_PROFILE2 : CURL_PROFILE3);
@@ -283,6 +288,29 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
       const now = performance.now();
       const t = (now - t0) / 1000;
       ctx.clearRect(0, 0, W, H);
+
+      // Lunge toward the "Send link" button when the cursor is over it: ease the
+      // whole model so the index fingertip closes onto the cursor (just touching the
+      // button). While hovering, keep the hand engaged (reset the idle timeout).
+      const sendBtn = followCursor && mouseX != null ? document.querySelector(".login-send-btn") : null;
+      let overButton = false;
+      if (sendBtn) {
+        const br = sendBtn.getBoundingClientRect();
+        const cr = canvas.getBoundingClientRect();
+        const pxc = mouseX + cr.left;
+        const pyc = mouseY + cr.top;
+        overButton = pxc >= br.left && pxc <= br.right && pyc >= br.top && pyc <= br.bottom;
+      }
+      if (overButton) {
+        lastMove = now; // stay engaged while hovering the button
+        if (lastIdxTip) {
+          lungeX += (mouseX - lastIdxTip[0]) * 0.1; // close the gap to the cursor
+          lungeY += (mouseY - lastIdxTip[1]) * 0.1;
+        }
+      } else {
+        lungeX += (0 - lungeX) * 0.07; // ease back home
+        lungeY += (0 - lungeY) * 0.07;
+      }
 
       const haveCursor = followCursor && mouseX != null;
       const lc = haveCursor ? toLocal(mouseX, mouseY) : null;
@@ -386,27 +414,29 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
       // forearm: tapered band, its wrist end pushed INTO the palm and width matched
       // to the wrist so the union has no notch there.
       {
-        const ux = (WRIST[0] - ELBOW[0]) / (Math.hypot(WRIST[0] - ELBOW[0], WRIST[1] - ELBOW[1]) || 1);
-        const uy = (WRIST[1] - ELBOW[1]) / (Math.hypot(WRIST[0] - ELBOW[0], WRIST[1] - ELBOW[1]) || 1);
+        const E = FOREARM_END; // draw the forearm out to here (well past the lift elbow)
+        const ux = (WRIST[0] - E[0]) / (Math.hypot(WRIST[0] - E[0], WRIST[1] - E[1]) || 1);
+        const uy = (WRIST[1] - E[1]) / (Math.hypot(WRIST[0] - E[0], WRIST[1] - E[1]) || 1);
         const px = -uy;
         const py = ux;
-        // Realistic forearm: thick BELLY tapering to a slim WRIST that tucks deep
-        // into the palm, so the hand widens out of a narrow wrist like a real arm
-        // (no fat, abrupt junction). Belly sits nearer the elbow.
         const wEnd = [WRIST[0] + ux * 0.2, WRIST[1] + uy * 0.2]; // slim wrist, tucked into palm
-        const wW = 0.1; // wrist half-width — the slim waist
-        const wB = 0.16; // forearm belly (thickest point)
-        const wE = 0.14; // elbow half-width
-        const belly = [lerp(wEnd[0], ELBOW[0], 0.55), lerp(wEnd[1], ELBOW[1], 0.55)];
+        // Forearm: a clean taper from the slim wrist, widening MONOTONICALLY toward
+        // the (off-screen) elbow — the back edge a touch fuller than the underside.
+        // No mid-bulge (that pinched the wrist) and a straight centerline (no pipe).
+        const at = (s) => [lerp(wEnd[0], E[0], s), lerp(wEnd[1], E[1], s)];
+        const m1 = at(0.28);
+        const m2 = at(0.6);
         bodyPolys.push(
           smoothClosed(
             [
-              [wEnd[0] + px * wW, wEnd[1] + py * wW],
-              [belly[0] + px * wB, belly[1] + py * wB],
-              [ELBOW[0] + px * wE, ELBOW[1] + py * wE],
-              [ELBOW[0] - px * wE, ELBOW[1] - py * wE],
-              [belly[0] - px * wB, belly[1] - py * wB],
-              [wEnd[0] - px * wW, wEnd[1] - py * wW],
+              [wEnd[0] + px * 0.12, wEnd[1] + py * 0.12], // wrist, back edge (slim)
+              [m1[0] + px * 0.17, m1[1] + py * 0.17], // back edge fills out…
+              [m2[0] + px * 0.215, m2[1] + py * 0.215], // …toward the elbow (muscle)
+              [E[0] + px * 0.22, E[1] + py * 0.22],
+              [E[0] - px * 0.22, E[1] - py * 0.22],
+              [m2[0] - px * 0.19, m2[1] - py * 0.19],
+              [m1[0] - px * 0.15, m1[1] - py * 0.15], // straighter, slimmer underside
+              [wEnd[0] - px * 0.12, wEnd[1] - py * 0.12], // wrist, underside (slim)
             ],
             10,
           ).map((p) => toCanvas(rotW(p, ARM_RAISE))),
@@ -451,6 +481,7 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
           w: f.w,
           capR: f.w * unit * 2.2, // small zone (≈ knuckle-cap size) around the MCP
         });
+        if (i === 1) lastIdxTip = fingerJobs[fingerJobs.length - 1].tip; // index tip → lunge feedback
       }
 
       const pathPoly = (poly) => {
