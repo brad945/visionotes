@@ -407,7 +407,7 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
         // breathing: NONE while reaching for the Send button (the lunge would chase
         // the breath and bob the whole arm); otherwise a subtle baseline while
         // tracking, scaling UP to full at rest.
-        const breathAmt = overButton ? 0 : 0.3 + 0.7 * (1 - front);
+        const breathAmt = overButton ? 0 : 0.45 + 0.55 * (1 - front);
         const breathCurl = (Math.sin(t * 0.8 + i * 0.7) + 0.45 * Math.sin(t * 1.9 + i * 1.3)) * 3.2 * DEG;
         const breathBase = Math.sin(t * 0.5 + i * 0.6) * 2.2 * DEG;
         targetCurl += breathCurl * breathAmt;
