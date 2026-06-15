@@ -70,6 +70,7 @@ const IDLE_AFTER_MS = 3000; // cursor sitting still this long → relax to the r
 const IDLE_FADE_MS = 700; // ease into that idle over this window (no snap)
 const FINGER_MIN = -104 * DEG; // anatomical clamp on the FINAL base angle (down)
 const FINGER_MAX = 14 * DEG; // anatomical clamp (up) — no wrist hyperextension
+const INDEX_MAX = 42 * DEG; // the index alone may rise higher, to point up at a high cursor
 const REACH_MIN_RATIO = 0.45; // tightest curl: tip won't pull closer than 45% of length
 const CURL_SPAN = 78 * DEG; // per-knuckle curl at full crunch (× CURL_PROFILE)
 const FAR_FADE = 4.5; // local units: beyond ~this the hand relaxes toward its natural
@@ -199,7 +200,7 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
       ctx.lineCap = "round";
       unit = Math.min(W, H) * scale;
       cx = W * 0.22; // wrist toward the left; the forearm runs off the left edge
-      wristY = H * 0.81 + 30; // vertical position of the wrist on the canvas (smaller = higher)
+      wristY = H * 0.81 + 60; // vertical position of the wrist on the canvas (smaller = higher)
     }
 
     // Rotate a local point about the ELBOW by `ang` (lifts the wrist+hand up;
@@ -344,7 +345,7 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
           // by armLift, so subtract armLift here. Clamp the base relative to the
           // PALM (anatomical limit) — the lift adds the natural raised-wrist tilt.
           const { alpha } = chordShape(f.seg, curl, f.prof);
-          const base = clamp(beta - alpha - armLift, FINGER_MIN, FINGER_MAX);
+          const base = clamp(beta - alpha - armLift, FINGER_MIN, f.name === "index" ? INDEX_MAX : FINGER_MAX);
 
           // Fade reach out at the edges: too far → relax to fanned rest (kills the
           // "salute"); over the arm / behind (front→0) → relax (no spaz). The good
@@ -354,9 +355,14 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
           targetCurl = lerp(f.restCurl, curl, eng);
         }
 
-        // idle breathing so it's alive even at rest / out of reach
-        const breath = Math.sin(t * 0.9 + i) * 1.5 * DEG;
-        targetCurl += breath;
+        // idle breathing — a gentle, organic sway so the hand feels alive at rest.
+        // Two layered sines (different speeds) read more fluid than one; a slow
+        // base-angle drift adds subtle whole-finger motion. Stronger when idle.
+        const idleAmt = 1 - front; // ~1 at rest / not tracking, ~0 when actively reaching
+        const breathCurl = (Math.sin(t * 0.8 + i * 0.7) + 0.45 * Math.sin(t * 1.9 + i * 1.3)) * 3.2 * DEG;
+        const breathBase = Math.sin(t * 0.5 + i * 0.6) * 2.2 * DEG;
+        targetCurl += breathCurl * idleAmt;
+        targetBase += breathBase * idleAmt;
 
         // damp toward targets (no snapping)
         st.base += (targetBase - st.base) * 0.16;

@@ -66,7 +66,7 @@ export default function App() {
             }
           />
         </div>
-        <div style={{ position: "relative", zIndex: 2, marginTop: 132, padding: "0 16px" }}>
+        <div style={{ position: "relative", zIndex: 2, marginTop: 132, padding: "0 16px", transform: "translateX(400px)" }}>
           <Login splash={dark} />
         </div>
       </div>
