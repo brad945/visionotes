@@ -95,7 +95,7 @@ export default function Login({ splash = false }) {
         <button
           type="submit"
           className="vn-btn login-send-btn"
-          style={{ marginTop: 12, width: "100%" }}
+          style={{ marginTop: 12, width: "60%", display: "block", marginLeft: "auto", marginRight: "auto" }}
         >
           Send link
         </button>
