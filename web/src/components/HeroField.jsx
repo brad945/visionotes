@@ -27,11 +27,17 @@ const CURL_PROFILE2 = [0.85, 1.15]; // thumb (MCP, IP)
 // A bigger middle value = a sharper, more angular bend at the PIP knuckle.
 const FINGERS = [
   { name: "thumb", mcp: [0.34, 0.16], rest: -16 * DEG, seg: [0.34, 0.27], prof: [0.85, 1.15], restCurl: 0 * DEG, reachW: 0.7, w: 0.1 },
-  { name: "index", mcp: [0.56, 0.5], rest: -72 * DEG, seg: [0.4, 0.28, 0.2], prof: [0.62, 1.08, 1.3], restCurl: -6 * DEG, reachW: 1, w: 0.08 },
-  { name: "middle", mcp: [0.72, 0.54], rest: -75 * DEG, seg: [0.44, 0.3, 0.21], prof: [0.8, 1.2, 1.0], restCurl: -11 * DEG, reachW: 1, w: 0.084 },
-  { name: "ring", mcp: [0.87, 0.5], rest: -81 * DEG, seg: [0.4, 0.28, 0.2], prof: [0.5, 1.34, 1.16], restCurl: -16 * DEG, reachW: 1, w: 0.077 },
-  { name: "pinky", mcp: [1.0, 0.42], rest: -83 * DEG, seg: [0.3, 0.22, 0.16], prof: [0.72, 0.96, 1.5], restCurl: -22 * DEG, reachW: 1, w: 0.064 },
+  // rest/restCurl define the IDLE pose only (reaching uses live IK). `mcp` is the
+  // PALM knuckle — it anchors the palm arch / dome. The FINGER itself is drawn from
+  // mcp + FINGER_OFFSET, so the fingers can sit lower/right of the palm WITHOUT
+  // dragging the palm or wrist down (those stay put).
+  { name: "index", mcp: [0.56, 0.5], rest: -4 * DEG, seg: [0.4, 0.28, 0.2], prof: [0.62, 1.08, 1.3], restCurl: -27 * DEG, reachW: 1, w: 0.08 },
+  { name: "middle", mcp: [0.72, 0.54], rest: 3 * DEG, seg: [0.44, 0.3, 0.21], prof: [0.8, 1.2, 1.0], restCurl: -27 * DEG, reachW: 1, w: 0.084 },
+  { name: "ring", mcp: [0.87, 0.5], rest: 10 * DEG, seg: [0.4, 0.28, 0.2], prof: [0.5, 1.34, 1.16], restCurl: -27 * DEG, reachW: 1, w: 0.077 },
+  { name: "pinky", mcp: [1.0, 0.42], rest: 17 * DEG, seg: [0.3, 0.22, 0.16], prof: [0.72, 0.96, 1.5], restCurl: -27 * DEG, reachW: 1, w: 0.064 },
 ];
+// Fingers are drawn from this offset off their palm knuckle (palm stays put).
+const FINGER_OFFSET = [0.04, -0.07]; // [right, down] — tune the DOWN value to taste
 const TIP_RATIO = 0.58; // distal half-width relative to MCP half-width
 const WRIST = [0, 0];
 const ELBOW = [-0.92, -0.03]; // forearm runs back-left to an off-screen elbow
@@ -42,8 +48,9 @@ const ELBOW = [-0.92, -0.03]; // forearm runs back-left to an off-screen elbow
 // "Good zone": the cursor is right of the thumb knuckle. Left of it (over the
 // wrist/forearm or behind the hand) the fingers smoothly relax to rest instead
 // of whipping around an ill-defined aim direction.
-const FRONT_LO = -0.05; // cursor x here or further left (over the arm) → fully relaxed
-const FRONT_HI = 0.34; // cursor x at/right of the thumb knuckle → fully engaged
+const FRONT_LO = 0.34; // cursor AT or LEFT of the thumb knuckle (x≈thumb MCP) → fully
+//                        idle: hand ignores the cursor and rests with idle breathing.
+const FRONT_HI = 0.52; // cursor well right of the thumb knuckle → fully engaged (tracks)
 const FINGER_MIN = -104 * DEG; // anatomical clamp on the FINAL base angle (down)
 const FINGER_MAX = 14 * DEG; // anatomical clamp (up) — no wrist hyperextension
 const REACH_MIN_RATIO = 0.45; // tightest curl: tip won't pull closer than 45% of length
@@ -286,7 +293,7 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
         if (lc) {
           // Tip-IK: aim THIS fingertip at the cursor. Measured from the finger's
           // LIFTED knuckle (the hand may have hinged up), in the local frame.
-          const mcp = liftLocal(f.mcp, armLift);
+          const mcp = liftLocal([f.mcp[0] + FINGER_OFFSET[0], f.mcp[1] + FINGER_OFFSET[1]], armLift);
           const dx = lc[0] - mcp[0];
           const dy = lc[1] - mcp[1];
           const beta = Math.atan2(dy, dx); // direction lifted-MCP → cursor
@@ -401,7 +408,7 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
       for (const i of order) {
         const f = FINGERS[i];
         const st = state[i];
-        const joints = fingerJoints(f.mcp, st.base, st.curl, f.seg, f.prof);
+        const joints = fingerJoints([f.mcp[0] + FINGER_OFFSET[0], f.mcp[1] + FINGER_OFFSET[1]], st.base, st.curl, f.seg, f.prof);
         // closed silhouette: tapered sides + rounded TIP + rounded KNUCKLE caps,
         // lightly smoothed (sub-2). Used for both fill and outline, so the finger
         // is fully outlined at both ends (no bare knuckle, no flat connection line).
