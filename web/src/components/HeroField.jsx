@@ -38,6 +38,10 @@ const FINGERS = [
 ];
 // Fingers are drawn from this offset off their palm knuckle (palm stays put).
 const FINGER_OFFSET = [0.04, -0.06]; // [right, down] — tune the DOWN value to taste
+// Landmark dots (knuckle joints + fingertips). Hidden for the clean dotted-outline
+// look; flip either to `true` to bring them back when tuning/editing the rig.
+const SHOW_JOINT_DOTS = false;
+const SHOW_TIP_DOTS = false;
 const TIP_RATIO = 0.58; // distal half-width relative to MCP half-width
 const WRIST = [0, 0];
 const ELBOW = [-0.92, -0.03]; // forearm runs back-left to an off-screen elbow
@@ -181,7 +185,7 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
       ctx.lineCap = "round";
       unit = Math.min(W, H) * scale;
       cx = W * 0.22; // wrist toward the left; the forearm runs off the left edge
-      wristY = H * 0.82; // lower; arch + fingers sit below the form as one piece
+      wristY = H * 0.86; // lower; arch + fingers sit below the form as one piece
     }
 
     // Rotate a local point about the ELBOW by `ang` (lifts the wrist+hand up;
@@ -514,16 +518,20 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
         // joint dots from the MCP (knuckle) through the inner joints — the MCP dot
         // (kk=0) defines each finger where it connects to the hand, since the open
         // "U" outline leaves the knuckle end bare. Tip gets the mint dot below.
-        ctx.fillStyle = dot;
-        for (let kk = 0; kk < job.joints.length - 1; kk++) {
+        if (SHOW_JOINT_DOTS) {
+          ctx.fillStyle = dot;
+          for (let kk = 0; kk < job.joints.length - 1; kk++) {
+            ctx.beginPath();
+            ctx.arc(job.joints[kk][0], job.joints[kk][1], Math.max(1.7, job.w * unit * 0.22), 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+        if (SHOW_TIP_DOTS) {
+          ctx.fillStyle = accent;
           ctx.beginPath();
-          ctx.arc(job.joints[kk][0], job.joints[kk][1], Math.max(1.7, job.w * unit * 0.22), 0, Math.PI * 2);
+          ctx.arc(job.tip[0], job.tip[1], job.w * TIP_RATIO * unit * 0.5, 0, Math.PI * 2);
           ctx.fill();
         }
-        ctx.fillStyle = accent;
-        ctx.beginPath();
-        ctx.arc(job.tip[0], job.tip[1], job.w * TIP_RATIO * unit * 0.5, 0, Math.PI * 2);
-        ctx.fill();
         // outline now (closed silhouette, both ends capped). Finger-vs-finger
         // occlusion is handled by the later fills painting over it. The only
         // suppression is the knuckle-merge gate: clear the cap where it bulges into

@@ -34,7 +34,7 @@ export default function App() {
           position: "relative",
           overflow: "hidden",
           display: "flex",
-          alignItems: "center",
+          alignItems: "flex-start",
           justifyContent: "center",
         }}
       >
@@ -66,7 +66,7 @@ export default function App() {
             }
           />
         </div>
-        <div style={{ position: "relative", zIndex: 2, transform: "translateY(-40px)", padding: "0 16px" }}>
+        <div style={{ position: "relative", zIndex: 2, marginTop: 132, padding: "0 16px" }}>
           <Login splash={dark} />
         </div>
       </div>
