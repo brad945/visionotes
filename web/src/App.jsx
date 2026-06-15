@@ -38,7 +38,7 @@ export default function App() {
           justifyContent: "center",
         }}
       >
-        <HeroField auto background followCursor scale={0.5} autoDelayMs={300} autoDurationMs={1500} />
+        <HeroField background followCursor scale={0.5} />
         {/* Soft center scrim so the form reads over the moving particles. */}
         <div
           style={{

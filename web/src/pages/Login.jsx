@@ -31,7 +31,8 @@ export default function Login({ splash = false }) {
 
   return (
     <main style={{ maxWidth: 360, margin: "0 auto", textAlign: "center" }}>
-      {splash && (
+      {/* The 3D "key" send button is identical in BOTH themes (dark key on the
+          light/dark splash); only the input below adapts to splash. */}
       <style>{`
         .login-send-btn {
           /* curved surface: lit at the top, falling into shadow at the bottom */
@@ -68,7 +69,6 @@ export default function Login({ splash = false }) {
             inset 0 1px 0 rgba(255,255,255,0.06);
         }
       `}</style>
-      )}
       <p className="vn-label" style={{ marginBottom: 12 }}>VisioNotes</p>
       <h1>Log in</h1>
       <p className="vn-muted" style={{ margin: "8px 0 24px" }}>
@@ -96,7 +96,7 @@ export default function Login({ splash = false }) {
         />
         <button
           type="submit"
-          className={splash ? "vn-btn login-send-btn" : "vn-btn vn-btn--primary"}
+          className="vn-btn login-send-btn"
           style={{ marginTop: 12, width: "100%" }}
         >
           Send link
