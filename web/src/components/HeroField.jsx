@@ -48,9 +48,9 @@ const ELBOW = [-0.92, -0.03]; // forearm runs back-left to an off-screen elbow
 // "Good zone": the cursor is right of the thumb knuckle. Left of it (over the
 // wrist/forearm or behind the hand) the fingers smoothly relax to rest instead
 // of whipping around an ill-defined aim direction.
-const FRONT_LO = 0.44; // cursor AT or LEFT of here (a bit right of the thumb knuckle) →
-//                        fully idle: hand ignores the cursor and rests with breathing.
-const FRONT_HI = 0.62; // cursor well right of here → fully engaged (tracks the cursor)
+const FRONT_LO = 0.54; // cursor AT or LEFT of here (right of the thumb knuckle) → fully
+//                        idle: hand ignores the cursor and rests with idle breathing.
+const FRONT_HI = 0.72; // cursor well right of here → fully engaged (tracks the cursor)
 const FINGER_MIN = -104 * DEG; // anatomical clamp on the FINAL base angle (down)
 const FINGER_MAX = 14 * DEG; // anatomical clamp (up) — no wrist hyperextension
 const REACH_MIN_RATIO = 0.45; // tightest curl: tip won't pull closer than 45% of length
