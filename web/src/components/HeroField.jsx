@@ -70,7 +70,7 @@ const rotW = (p, ang) => {
 const FRONT_LO = 0.54; // cursor AT or LEFT of here (right of the thumb knuckle) → fully
 //                        idle: hand ignores the cursor and rests with idle breathing.
 const FRONT_HI = 0.72; // cursor well right of here → fully engaged (tracks the cursor)
-const IDLE_AFTER_MS = 3000; // cursor sitting still this long → relax to the rest pose too
+const IDLE_AFTER_MS = 2000; // cursor sitting still this long → relax to the rest pose too
 const IDLE_FADE_MS = 700; // ease into that idle over this window (no snap)
 const CLICK_MS = 220; // duration of the index "press" tap when the Send-link button is clicked
 const CLICK_DROP = 1.6 * DEG; // how far the index dips down at the peak of the press (very subtle)
