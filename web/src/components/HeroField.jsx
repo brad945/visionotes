@@ -79,14 +79,27 @@ const CLICK_DROP = 1.6 * DEG; // how far the index dips down at the peak of the 
 // Each event strikes its finger(s); the arm drifts laterally to follow the run and
 // the wrist dips on each strike (weight into the key), like real technique.
 const PIANO_PHRASE = [
-  { t: 0, f: [0] }, { t: 1, f: [1] }, { t: 2, f: [2] }, { t: 3, f: [3] }, { t: 4, f: [4] }, // scale up
-  { t: 5.5, f: [0, 2, 4] }, // chord (triad)
-  { t: 7, f: [0] }, { t: 7.6, f: [1] }, { t: 8.2, f: [3] }, { t: 8.8, f: [4] }, // arpeggio up
-  { t: 10, f: [4] }, { t: 11, f: [3] }, { t: 12, f: [2] }, { t: 13, f: [1] }, { t: 14, f: [0] }, // scale down
-  { t: 15.5, f: [1, 3] }, // chord
+  // chord cluster 1 — long + diverse voicings (incl. thumb+pinky octaves)
+  { t: 0.0, f: [0, 4] }, { t: 0.7, f: [0, 2, 4] }, { t: 1.4, f: [1, 3] }, { t: 2.1, f: [0, 1, 3] },
+  { t: 2.8, f: [2, 3, 4] }, { t: 3.5, f: [0, 4] }, { t: 4.2, f: [0, 2, 3] }, { t: 4.9, f: [1, 2, 4] },
+  // scale run up and back down
+  { t: 5.8, f: [0] }, { t: 6.15, f: [1] }, { t: 6.5, f: [2] }, { t: 6.85, f: [3] }, { t: 7.2, f: [4] },
+  { t: 7.55, f: [3] }, { t: 7.9, f: [2] }, { t: 8.25, f: [1] }, { t: 8.6, f: [0] },
+  // chord cluster 2 — wide/sparse voicings
+  { t: 9.4, f: [0, 4] }, { t: 10.1, f: [0, 1] }, { t: 10.8, f: [3, 4] }, { t: 11.5, f: [0, 1, 4] },
+  { t: 12.2, f: [1, 2, 3] }, { t: 12.9, f: [0, 2, 4] }, { t: 13.6, f: [0, 4] },
+  // arpeggio cluster
+  { t: 14.4, f: [0] }, { t: 14.75, f: [1] }, { t: 15.1, f: [2] }, { t: 15.45, f: [4] },
+  { t: 15.8, f: [2] }, { t: 16.15, f: [1] }, { t: 16.5, f: [0] },
+  // a second scale run
+  { t: 17.2, f: [0] }, { t: 17.55, f: [1] }, { t: 17.9, f: [2] }, { t: 18.25, f: [3] }, { t: 18.6, f: [4] },
+  { t: 18.95, f: [3] }, { t: 19.3, f: [2] }, { t: 19.65, f: [1] }, { t: 20.0, f: [0] },
+  // chord cluster 3 — closing build to the full chord
+  { t: 20.8, f: [0, 4] }, { t: 21.5, f: [1, 3] }, { t: 22.2, f: [0, 2, 4] }, { t: 22.9, f: [0, 1, 4] },
+  { t: 23.6, f: [1, 2, 3, 4] }, { t: 24.3, f: [0, 1, 2, 3, 4] },
 ];
-const PIANO_PHRASE_BEATS = 17; // loop length in beats
-const PIANO_BPS = 2.4; // beats per second (tempo)
+const PIANO_PHRASE_BEATS = 25.2; // loop length in beats (~2× longer)
+const PIANO_BPS = 3.4; // beats per second (tempo) — faster
 const PIANO_CURL = 7 * DEG; // per-knuckle flex at a key strike
 const PIANO_SHIFT = 13; // px the hand drifts laterally per finger-step (arm follows the run)
 const PIANO_DROP = 7; // px the wrist dips on a strike (arm weight into the key)
@@ -100,8 +113,8 @@ PIANO_STRIKES.forEach((a) => a.sort((x, y) => x - y));
 // triangle strike envelope: fast attack, slower release (a key press → lift). dt seconds.
 const pianoEnv = (dt) => {
   if (dt < 0) return 0;
-  if (dt < 0.05) return dt / 0.05;
-  if (dt < 0.39) return 1 - (dt - 0.05) / 0.34;
+  if (dt < 0.04) return dt / 0.04;
+  if (dt < 0.28) return 1 - (dt - 0.04) / 0.24;
   return 0;
 };
 // strike amount (0–1) for finger i at the given phrase time (beats), with wrap-around.
