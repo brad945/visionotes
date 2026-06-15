@@ -37,7 +37,7 @@ const FINGERS = [
   { name: "pinky", mcp: [1.0, 0.42], rest: 17 * DEG, seg: [0.3, 0.22, 0.16], prof: [0.72, 0.96, 1.5], restCurl: -27 * DEG, reachW: 1, w: 0.064 },
 ];
 // Fingers are drawn from this offset off their palm knuckle (palm stays put).
-const FINGER_OFFSET = [0.04, -0.07]; // [right, down] — tune the DOWN value to taste
+const FINGER_OFFSET = [0.04, -0.06]; // [right, down] — tune the DOWN value to taste
 const TIP_RATIO = 0.58; // distal half-width relative to MCP half-width
 const WRIST = [0, 0];
 const ELBOW = [-0.92, -0.03]; // forearm runs back-left to an off-screen elbow
