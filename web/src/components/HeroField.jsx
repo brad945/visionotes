@@ -71,6 +71,8 @@ const FRONT_LO = 0.54; // cursor AT or LEFT of here (right of the thumb knuckle)
 const FRONT_HI = 0.72; // cursor well right of here → fully engaged (tracks the cursor)
 const IDLE_AFTER_MS = 3000; // cursor sitting still this long → relax to the rest pose too
 const IDLE_FADE_MS = 700; // ease into that idle over this window (no snap)
+const CLICK_MS = 220; // duration of the index "press" tap when the Send-link button is clicked
+const CLICK_DROP = 2.5 * DEG; // how far the index dips down at the peak of the press (subtle)
 const FINGER_MIN = -104 * DEG; // anatomical clamp on the FINAL base angle (down)
 const FINGER_MAX = 14 * DEG; // anatomical clamp (up) — no wrist hyperextension
 const INDEX_MAX = 42 * DEG; // the index alone may rise higher, to point up at a high cursor
@@ -167,19 +169,22 @@ function chordShape(seg, curl, prof) {
  * Skeletal hand whose fingers articulate toward the cursor (procedural forward
  * kinematics with anatomical limits + idle breathing), rendered as a dot cloud.
  */
-export default function HeroField({ background = false, scale = 0.34, followCursor = true }) {
+export default function HeroField({ background = false, scale = 0.34, followCursor = true, overlay = false }) {
   const { theme } = useTheme();
-  const canvasRef = useRef(null);
-  const trackRef = useRef(null);
+  const bgCanvasRef = useRef(null); // hand body + non-index fingers (BEHIND the form)
+  const fgCanvasRef = useRef(null); // the index finger only (ABOVE the form)
   const themeRef = useRef(theme);
   useEffect(() => {
     themeRef.current = theme;
   }, [theme]);
 
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
+    const bgCanvas = bgCanvasRef.current;
+    const fgCanvas = fgCanvasRef.current;
+    if (!bgCanvas || !fgCanvas) return;
+    const bgCtx = bgCanvas.getContext("2d");
+    const fgCtx = fgCanvas.getContext("2d");
+    const canvas = bgCanvas; // the bg canvas drives sizing / cursor math
 
     let W, H, DPR, unit, cx, wristY;
     let mouseX = null, mouseY = null;
@@ -189,6 +194,7 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
     let armLift = 0; // eased: the whole hand pivots up at the elbow to reach high cursors
     let lungeX = 0, lungeY = 0; // eased translation of the whole model toward the Send button
     let lastIdxTip = null; // index fingertip (canvas px) from the previous frame
+    let clickT = -1e9; // timestamp of the last Send-link click (for the index press tap)
 
     // per-finger eased state {base, curl}
     const state = FINGERS.map((f) => ({ base: f.rest, curl: f.restCurl }));
@@ -198,11 +204,13 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
       const r = canvas.getBoundingClientRect();
       W = r.width;
       H = r.height;
-      canvas.width = W * DPR;
-      canvas.height = H * DPR;
-      ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-      ctx.lineJoin = "round";
-      ctx.lineCap = "round";
+      for (const [cv, c2] of [[bgCanvas, bgCtx], [fgCanvas, fgCtx]]) {
+        cv.width = W * DPR;
+        cv.height = H * DPR;
+        c2.setTransform(DPR, 0, 0, DPR, 0, 0);
+        c2.lineJoin = "round";
+        c2.lineCap = "round";
+      }
       unit = Math.min(W, H) * scale;
       cx = W * 0.22; // wrist toward the left; the forearm runs off the left edge
       wristY = H * 0.81 + 110; // vertical position of the wrist on the canvas (smaller = higher)
@@ -287,7 +295,9 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
     function draw() {
       const now = performance.now();
       const t = (now - t0) / 1000;
-      ctx.clearRect(0, 0, W, H);
+      const ctx = bgCtx; // main render target = the layer drawn BEHIND the form
+      bgCtx.clearRect(0, 0, W, H);
+      fgCtx.clearRect(0, 0, W, H);
 
       // Lunge toward the "Send link" button when the cursor is over it: ease the
       // whole model so the index fingertip closes onto the cursor (just touching the
@@ -311,6 +321,11 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
         lungeX += (0 - lungeX) * 0.07; // ease back home
         lungeY += (0 - lungeY) * 0.07;
       }
+
+      // index "press" tap on a Send-link click: a quick down→up pulse (snappy, not
+      // damped) that dips the index as if pressing the button, then springs back.
+      const sinceClick = now - clickT;
+      const clickPress = sinceClick >= 0 && sinceClick < CLICK_MS ? Math.sin((sinceClick / CLICK_MS) * Math.PI) : 0;
 
       const haveCursor = followCursor && mouseX != null;
       const lc = haveCursor ? toLocal(mouseX, mouseY) : null;
@@ -468,11 +483,18 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
       for (const i of order) {
         const f = FINGERS[i];
         const st = state[i];
-        const joints = fingerJoints([f.mcp[0] + FINGER_OFFSET[0], f.mcp[1] + FINGER_OFFSET[1]], st.base, st.curl, f.seg, f.prof);
-        // closed silhouette: tapered sides + rounded TIP + rounded KNUCKLE caps,
-        // lightly smoothed (sub-2). Used for both fill and outline, so the finger
-        // is fully outlined at both ends (no bare knuckle, no flat connection line).
+        const origin = [f.mcp[0] + FINGER_OFFSET[0], f.mcp[1] + FINGER_OFFSET[1]];
         const drp = (p) => toCanvas(rotW(p, -HAND_DROOP)); // display the hand drooped at the wrist
+        if (i === 1) {
+          // lunge tracks the index's UN-PRESSED tip, so the click dip doesn't make
+          // the model chase the tip (which dragged the whole arm up, accumulating).
+          const bare = fingerJoints(origin, st.base, st.curl, f.seg, f.prof);
+          lastIdxTip = drp(bare[bare.length - 1]);
+        }
+        // closed silhouette (tapered sides + rounded tip + knuckle caps). The index
+        // gets a small transient downward dip during a Send-link press.
+        const pressBase = i === 1 ? clickPress * CLICK_DROP : 0;
+        const joints = fingerJoints(origin, st.base - pressBase, st.curl, f.seg, f.prof);
         const contour = smoothClosed(fingerContour(joints, f.w), 2).map(drp);
         fingerJobs.push({
           poly: contour,
@@ -481,20 +503,19 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
           w: f.w,
           capR: f.w * unit * 2.2, // small zone (≈ knuckle-cap size) around the MCP
         });
-        if (i === 1) lastIdxTip = fingerJobs[fingerJobs.length - 1].tip; // index tip → lunge feedback
       }
 
-      const pathPoly = (poly) => {
-        ctx.beginPath();
-        ctx.moveTo(poly[0][0], poly[0][1]);
-        for (let k = 1; k < poly.length; k++) ctx.lineTo(poly[k][0], poly[k][1]);
-        ctx.closePath();
+      const pathPoly = (c, poly) => {
+        c.beginPath();
+        c.moveTo(poly[0][0], poly[0][1]);
+        for (let k = 1; k < poly.length; k++) c.lineTo(poly[k][0], poly[k][1]);
+        c.closePath();
       };
       // dotted outline of `poly`, skipping any dot that lands inside one of
       // `against`. Dots are scattered off the line (perpendicular jitter), sized
       // unevenly, and spaced unevenly — smaller + denser than a clean stroke — so
       // the silhouette reads organic/hand-stippled, not stamped on a perfect path.
-      const outline = (poly, against, seed, baseGate) => {
+      const outline = (c, poly, against, seed, baseGate) => {
         let carry = 0;
         let k = seed;
         for (let i = 0; i < poly.length; i++) {
@@ -537,9 +558,9 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
             }
             if (!hidden) {
               const r = 0.85 + hash01(k * 78.233) * 0.7; // 0.85–1.55px, mostly small
-              ctx.beginPath();
-              ctx.arc(x, y, r, 0, Math.PI * 2);
-              ctx.fill();
+              c.beginPath();
+              c.arc(x, y, r, 0, Math.PI * 2);
+              c.fill();
             }
             d += 3.8 + hash01(k * 39.42) * 2.2; // 3.8–6.0px gaps → denser than before
           }
@@ -559,11 +580,11 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
       //    front; here we only suppress the forearm⇄palm seam against each other.
       for (const p of bodyPolys) {
         ctx.fillStyle = fill;
-        pathPoly(p);
+        pathPoly(ctx, p);
         ctx.fill();
       }
       ctx.fillStyle = dot;
-      bodyPolys.forEach((p, idx) => outline(p, bodyPolys.filter((q) => q !== p), 11.3 + idx * 100));
+      bodyPolys.forEach((p, idx) => outline(ctx, p, bodyPolys.filter((q) => q !== p), 11.3 + idx * 100));
 
       // 2) fingers, back→front: fill + knuckle dots + mint tip, THEN outline. The
       //    NEXT (more-front) finger's fill paints over this finger's outline where
@@ -571,7 +592,7 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
       for (let fi = 0; fi < fingerJobs.length; fi++) {
         const job = fingerJobs[fi];
         ctx.fillStyle = fill;
-        pathPoly(job.poly);
+        pathPoly(ctx, job.poly);
         ctx.fill();
         // joint dots from the MCP (knuckle) through the inner joints — the MCP dot
         // (kk=0) defines each finger where it connects to the hand, since the open
@@ -596,11 +617,29 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
         // the wrist/palm, so a finger reaching across merges in at the knuckle.
         ctx.fillStyle = dot;
         const mcp = job.joints[0];
-        outline(job.poly, [], 67.7 + fi * 100, {
+        outline(ctx, job.poly, [], 67.7 + fi * 100, {
           polys: bodyPolys,
           cx: mcp[0],
           cy: mcp[1],
           r2: job.capR * job.capR,
+        });
+      }
+
+      // Foreground layer: redraw ONLY the index finger on the top canvas, so it sits
+      // ABOVE the form while the rest of the hand (already drawn on bgCtx) stays
+      // behind it. The index is fingerJobs[3] (draw order [4,3,2,1,0]).
+      const idxJob = fingerJobs[3];
+      if (idxJob) {
+        fgCtx.fillStyle = fill;
+        pathPoly(fgCtx, idxJob.poly);
+        fgCtx.fill();
+        fgCtx.fillStyle = dot;
+        const im = idxJob.joints[0];
+        outline(fgCtx, idxJob.poly, [], 67.7 + 3 * 100, {
+          polys: bodyPolys,
+          cx: im[0],
+          cy: im[1],
+          r2: idxJob.capR * idxJob.capR,
         });
       }
 
@@ -613,6 +652,10 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
       mouseY = e.clientY - r.top;
       lastMove = performance.now();
     }
+    function onMouseDown(e) {
+      const btn = document.querySelector(".login-send-btn");
+      if (btn && (e.target === btn || btn.contains(e.target))) clickT = performance.now();
+    }
     function onResize() {
       clearTimeout(resizeTimer);
       resizeTimer = setTimeout(setup, 150);
@@ -621,23 +664,27 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
     setup();
     rafId = requestAnimationFrame(draw);
     if (followCursor) window.addEventListener("mousemove", onMouseMove, { passive: true });
+    if (followCursor) window.addEventListener("mousedown", onMouseDown, { passive: true });
     window.addEventListener("resize", onResize);
 
     return () => {
       cancelAnimationFrame(rafId);
       clearTimeout(resizeTimer);
       if (followCursor) window.removeEventListener("mousemove", onMouseMove);
+      if (followCursor) window.removeEventListener("mousedown", onMouseDown);
       window.removeEventListener("resize", onResize);
     };
   }, [scale, followCursor]);
 
+  // Two stacked, full-bleed canvases (cover the positioned parent). Both ignore
+  // pointer events so the form stays clickable; the cursor is tracked on window.
+  // The form is given a z-index BETWEEN these two (see App), so the body/other
+  // fingers (bg, zIndex 0) sit behind it and the index (fg, zIndex 6) sits above.
+  const layer = { position: "absolute", inset: 0, width: "100%", height: "100%", display: "block", pointerEvents: "none" };
   return (
-    <div
-      className={background ? "hero-fill" : "hero-track"}
-      ref={trackRef}
-      style={{ background: PALETTES[theme === "light" ? "light" : "dark"].bg }}
-    >
-      <canvas className="hero-canvas" ref={canvasRef} />
-    </div>
+    <>
+      <canvas ref={bgCanvasRef} style={{ ...layer, zIndex: 0 }} />
+      <canvas ref={fgCanvasRef} style={{ ...layer, zIndex: 6 }} />
+    </>
   );
 }

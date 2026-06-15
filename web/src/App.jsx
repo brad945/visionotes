@@ -36,21 +36,10 @@ export default function App() {
           display: "flex",
           alignItems: "flex-start",
           justifyContent: "center",
+          background: dark ? "#07090d" : "#f3f6f7", // bg lives here now; the hand floats on top
         }}
       >
-        <HeroField background followCursor scale={0.5} />
-        {/* Soft center scrim so the form reads over the moving particles. */}
-        <div
-          style={{
-            position: "absolute",
-            inset: 0,
-            zIndex: 1,
-            pointerEvents: "none",
-            background: dark
-              ? "radial-gradient(ellipse 56% 48% at 50% 50%, rgba(7,9,13,0.72), rgba(7,9,13,0) 70%)"
-              : "radial-gradient(ellipse 56% 48% at 50% 50%, rgba(243,246,247,0.85), rgba(243,246,247,0) 70%)",
-          }}
-        />
+        <HeroField background overlay followCursor scale={0.5} />
         <div style={{ position: "absolute", top: 76, left: 0, right: 0, zIndex: 3, display: "flex", justifyContent: "center" }}>
           <ThemeToggle
             style={
