@@ -200,7 +200,7 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
       ctx.lineCap = "round";
       unit = Math.min(W, H) * scale;
       cx = W * 0.22; // wrist toward the left; the forearm runs off the left edge
-      wristY = H * 0.81 + 60; // vertical position of the wrist on the canvas (smaller = higher)
+      wristY = H * 0.81 + 110; // vertical position of the wrist on the canvas (smaller = higher)
     }
 
     // Rotate a local point about the ELBOW by `ang` (lifts the wrist+hand up;
