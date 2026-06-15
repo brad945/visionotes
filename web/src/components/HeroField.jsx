@@ -47,8 +47,8 @@ const WRIST = [0, 0.13]; // slightly raised so the wrist line isn't collapsed
 const ELBOW = [-0.92, 0.1]; // forearm runs back-left to an off-screen elbow
 // Open up the wrist angle: rotate the forearm UP (CCW) and the hand DOWN (CW),
 // each about the wrist. Tune these two to taste (degrees).
-const ARM_RAISE = 5 * DEG; // forearm rotates this much CCW (up) about the wrist
-const HAND_DROOP = 15 * DEG; // hand (palm + fingers) rotates this much CW (down) about the wrist
+const ARM_RAISE = 0 * DEG; // forearm rotation about the wrist (+ = CCW/up, − = CW/down)
+const HAND_DROOP = -5 * DEG; // hand (palm + fingers) rotation about the wrist (+ = CW/down, − = CCW/up)
 const rotW = (p, ang) => {
   const c = Math.cos(ang);
   const s = Math.sin(ang);
@@ -199,7 +199,7 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
       ctx.lineCap = "round";
       unit = Math.min(W, H) * scale;
       cx = W * 0.22; // wrist toward the left; the forearm runs off the left edge
-      wristY = H * 0.86; // lower; arch + fingers sit below the form as one piece
+      wristY = H * 0.81 + 30; // vertical position of the wrist on the canvas (smaller = higher)
     }
 
     // Rotate a local point about the ELBOW by `ang` (lifts the wrist+hand up;
