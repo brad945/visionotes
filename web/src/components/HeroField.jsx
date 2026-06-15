@@ -13,6 +13,7 @@ const PALETTES = {
 // y = UP, wrist at origin). Forearm enters from the left; the back of the hand
 // arches up over the keys; fingers hang down and curl toward the cursor. ---
 const DEG = Math.PI / 180;
+const MODEL_ALPHA = 0.82; // whole hand/arm rendered slightly transparent
 // How a finger's total curl is distributed across its knuckles. Distal joints
 // flex MORE than the base knuckle, so the finger rolls up like a real one
 // (not a rigid stick rotating about the MCP).
@@ -298,6 +299,8 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
       const ctx = bgCtx; // main render target = the layer drawn BEHIND the form
       bgCtx.clearRect(0, 0, W, H);
       fgCtx.clearRect(0, 0, W, H);
+      bgCtx.globalAlpha = MODEL_ALPHA; // render the whole model slightly transparent
+      fgCtx.globalAlpha = MODEL_ALPHA;
 
       // Lunge toward the "Send link" button when the cursor is over it: ease the
       // whole model so the index fingertip closes onto the cursor (just touching the
