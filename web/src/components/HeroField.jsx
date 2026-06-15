@@ -171,9 +171,6 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
   useEffect(() => {
     themeRef.current = theme;
   }, [theme]);
-  // Live read-only HUD: the draw loop writes the fingers' current base/curl/spread
-  // here each frame (via ref, so it updates as the cursor moves with no re-render).
-  const hudRef = useRef(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -570,15 +567,6 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
         });
       }
 
-      // live read-out: index base, average curl across the 4 long fingers, and the
-      // base-angle spread (fan) between index and pinky — updates as the cursor moves.
-      if (hudRef.current) {
-        const b = state[1].base / DEG;
-        const c = (state[1].curl + state[2].curl + state[3].curl + state[4].curl) / 4 / DEG;
-        const sp = (state[1].base - state[4].base) / 3 / DEG;
-        hudRef.current.textContent = `base ${b.toFixed(1)}°   curl ${c.toFixed(1)}°   spread ${sp.toFixed(1)}°`;
-      }
-
       rafId = requestAnimationFrame(draw);
     }
 
@@ -613,17 +601,6 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
       style={{ background: PALETTES[theme === "light" ? "light" : "dark"].bg }}
     >
       <canvas className="hero-canvas" ref={canvasRef} />
-      {/* Live read-only HUD (top-right): the fingers' current base/curl/spread,
-          updated each frame by the draw loop as the cursor moves. */}
-      <div
-        ref={hudRef}
-        style={{
-          position: "fixed", top: 8, right: 8, zIndex: 99, whiteSpace: "nowrap",
-          background: "rgba(255,255,255,0.94)", color: "#111",
-          padding: "8px 12px", font: "13px monospace", borderRadius: 6,
-          boxShadow: "0 2px 10px rgba(0,0,0,0.25)",
-        }}
-      />
     </div>
   );
 }
