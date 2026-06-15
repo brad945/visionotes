@@ -404,9 +404,10 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
         // idle breathing — a gentle, organic sway so the hand feels alive at rest.
         // Two layered sines (different speeds) read more fluid than one; a slow
         // base-angle drift adds subtle whole-finger motion. Stronger when idle.
-        // breathing is ALWAYS present (the hand is alive even while tracking) but
-        // scaled UP when idle: a subtle baseline + extra motion at rest.
-        const breathAmt = 0.3 + 0.7 * (1 - front); // ~0.3 while tracking, ~1.0 at rest
+        // breathing: NONE while reaching for the Send button (the lunge would chase
+        // the breath and bob the whole arm); otherwise a subtle baseline while
+        // tracking, scaling UP to full at rest.
+        const breathAmt = overButton ? 0 : 0.3 + 0.7 * (1 - front);
         const breathCurl = (Math.sin(t * 0.8 + i * 0.7) + 0.45 * Math.sin(t * 1.9 + i * 1.3)) * 3.2 * DEG;
         const breathBase = Math.sin(t * 0.5 + i * 0.6) * 2.2 * DEG;
         targetCurl += breathCurl * breathAmt;
