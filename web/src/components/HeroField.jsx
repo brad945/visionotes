@@ -99,7 +99,7 @@ const PIANO_PHRASE = [
   { t: 23.6, f: [1, 2, 3, 4] }, { t: 24.3, f: [0, 1, 2, 3, 4] },
 ];
 const PIANO_PHRASE_BEATS = 25.2; // loop length in beats (~2× longer)
-const PIANO_BPS = 0.85; // beats per second (tempo) — 4× slower
+const PIANO_BPS = 6.8; // beats per second (tempo) — 8× faster
 const PIANO_CURL = 7 * DEG; // per-knuckle flex at a key strike
 const PIANO_SHIFT = 13; // px the hand drifts laterally per finger-step (arm follows the run)
 const PIANO_DROP = 6; // px the wrist dips on a strike (arm weight into the key)
