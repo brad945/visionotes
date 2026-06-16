@@ -102,7 +102,9 @@ const PIANO_PHRASE_BEATS = 25.2; // loop length in beats (~2× longer)
 const PIANO_BPS = 3.4; // beats per second (tempo) — faster
 const PIANO_CURL = 7 * DEG; // per-knuckle flex at a key strike
 const PIANO_SHIFT = 13; // px the hand drifts laterally per finger-step (arm follows the run)
-const PIANO_DROP = 7; // px the wrist dips on a strike (arm weight into the key)
+const PIANO_DROP = 6; // px the wrist dips on a strike (arm weight into the key)
+const WRIST_SWAY = 3 * DEG; // gentle continuous wrist undulation while playing
+const WRIST_FLEX = 5 * DEG; // the wrist HINGES down (flexes) on each strike (weight)
 // derive: per-finger sorted strike times + each event's lateral position (avg finger − 2).
 const PIANO_STRIKES = [[], [], [], [], []];
 for (const ev of PIANO_PHRASE) {
@@ -250,6 +252,7 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
     let armLift = 0; // eased: the whole hand pivots up at the elbow to reach high cursors
     let lungeX = 0, lungeY = 0; // eased translation of the whole model toward the Send button
     let pianoX = 0, pianoY = 0; // eased model offset for the idle piano (lateral run + wrist dip)
+    let wristHinge = 0; // eased wrist-joint rotation (hand hinges relative to the forearm)
     let lastIdxTip = null; // index fingertip (canvas px) from the previous frame
     let clickT = -1e9; // timestamp of the last Send-link click (for the index press tap)
 
@@ -401,6 +404,7 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
       const pianoGate = 1 - front; // plays in the idle pose, fades while tracking
       const phraseT = (t * PIANO_BPS) % PIANO_PHRASE_BEATS;
       const pianoFlexArr = [0, 0, 0, 0, 0];
+      let hingeTarget = 0;
       if (pianoGate > 0.01) {
         let strkSum = 0;
         let recentEv = PIANO_PHRASE[PIANO_PHRASE.length - 1];
@@ -414,10 +418,14 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
         }
         pianoX += (recentEv.lat * PIANO_SHIFT * pianoGate - pianoX) * 0.07;
         pianoY += (Math.min(strkSum, 1.6) * PIANO_DROP * pianoGate - pianoY) * 0.3;
+        // wrist hinges: a slow undulation + a flex DOWN on each strike (weight).
+        hingeTarget = (Math.sin(t * 1.6) * WRIST_SWAY - Math.min(strkSum, 1.5) * WRIST_FLEX) * pianoGate;
       } else {
         pianoX += (0 - pianoX) * 0.07;
         pianoY += (0 - pianoY) * 0.3;
       }
+      wristHinge += (hingeTarget - wristHinge) * 0.25; // eased wrist bend
+      const handRot = -HAND_DROOP + wristHinge; // hand's rotation about the wrist (dynamic)
 
       // Arm lift: hinge the hand up at the elbow when the cursor is high AND close
       // AND in the good zone. Gated on the RESTING middle knuckle (never the lifted
@@ -441,7 +449,7 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
           // LIFTED knuckle (the hand may have hinged up), in the local frame.
           // hand is displayed drooped by HAND_DROOP, so aim at the cursor rotated
           // into the un-drooped frame (keeps the fingertip on the real cursor).
-          const aim = rotW(lc, HAND_DROOP);
+          const aim = rotW(lc, -handRot);
           const mcp = liftLocal([f.mcp[0] + FINGER_OFFSET[0], f.mcp[1] + FINGER_OFFSET[1]], armLift);
           const dx = aim[0] - mcp[0];
           const dy = aim[1] - mcp[1];
@@ -560,7 +568,7 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
             [0.02, 0.0],
           ],
           6,
-        ).map((p) => toCanvas(rotW(p, -HAND_DROOP))),
+        ).map((p) => toCanvas(rotW(p, handRot))),
       );
 
       // fingers — far side (pinky) → near side, thumb last so it sits in front.
@@ -569,7 +577,7 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
         const f = FINGERS[i];
         const st = state[i];
         const origin = [f.mcp[0] + FINGER_OFFSET[0], f.mcp[1] + FINGER_OFFSET[1]];
-        const drp = (p) => toCanvas(rotW(p, -HAND_DROOP)); // display the hand drooped at the wrist
+        const drp = (p) => toCanvas(rotW(p, handRot)); // hand rotated about the wrist (droop + live hinge)
         if (i === 1) {
           // lunge tracks the index's UN-PRESSED tip, so the click dip doesn't make
           // the model chase the tip (which dragged the whole arm up, accumulating).
