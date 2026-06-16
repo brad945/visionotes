@@ -273,7 +273,7 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
       }
       unit = Math.min(W, H) * scale;
       cx = W * 0.22; // wrist toward the left; the forearm runs off the left edge
-      wristY = H * 0.81 + 110; // vertical position of the wrist on the canvas (smaller = higher)
+      wristY = H * 0.68; // vertical position of the wrist on the canvas (smaller = higher)
     }
 
     // Rotate a local point about the ELBOW by `ang` (lifts the wrist+hand up;
@@ -608,38 +608,83 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
         const tips = fingerJobs.map((job, idx) => ({ x: job.tip[0], y: job.tip[1], s: pianoFlexArr[order[idx]] * pianoGate }));
         let nMin = Infinity, nMax = -Infinity, sumY = 0;
         for (const tp of tips) {
-          const nx = tp.x - pianoX; // neutral x (remove the run shift) → a FIXED span
+          const nx = tp.x - pianoX; // neutral x (drop the run shift) → a FIXED keyboard
           nMin = Math.min(nMin, nx);
           nMax = Math.max(nMax, nx);
           sumY += tp.y;
         }
-        const margin = 0.16 * unit + 2 * PIANO_SHIFT;
+        const margin = 0.22 * unit + 2 * PIANO_SHIFT;
         const kbLeft = nMin - margin;
         const kbW = nMax - nMin + 2 * margin;
-        const kbTop = sumY / tips.length + 0.02 * unit; // key tops just below the resting fingertips
-        const kbH = 0.18 * unit;
-        const nWhite = Math.max(7, Math.round(kbW / (0.16 * unit)));
+        const nearY = sumY / tips.length + 0.02 * unit; // front (near) edge — where the fingers press
+        const faceH = 0.05 * unit; // short front faces (low side angle)
+        const nWhite = Math.max(7, Math.round(kbW / (0.115 * unit)));
         const wKeyW = kbW / nWhite;
+        // SIDE VIEW (like watching a pianist from the side): the keyboard recedes off
+        // into the distance to the RIGHT, so the vanishing point is far to the right and
+        // only slightly up — the keys angle sideways rather than facing forward.
+        const vpX = kbLeft + kbW * 2.1;
+        const vpY = nearY - 0.45 * unit;
+        const recede = 0.55; // how far the key backs travel toward the VP
+        const far = (x) => [x + (vpX - x) * recede, nearY + (vpY - nearY) * recede];
         bgCtx.save();
-        bgCtx.globalAlpha = pianoGate * 0.9;
+        bgCtx.globalAlpha = pianoGate * 0.95;
+        // rotate the keyboard CLOCKWISE around the BASE OF THE THUMB (its MCP joint).
+        // fingerJobs are in draw order [4,3,2,1,0] → the thumb is the last one.
+        const thumbBase = fingerJobs[fingerJobs.length - 1].joints[0];
+        const pcx = thumbBase[0], pcy = thumbBase[1];
+        bgCtx.translate(pcx, pcy);
+        bgCtx.rotate(0.2); // + = clockwise (canvas y points down); tune this angle
+        bgCtx.translate(-pcx, -pcy);
         for (let k = 0; k < nWhite; k++) {
           const x = kbLeft + k * wKeyW;
+          const x2 = x + wKeyW;
           let press = 0;
-          for (const tp of tips) if (tp.x >= x && tp.x < x + wKeyW && tp.s > press) press = tp.s;
-          const dy = press * 0.05 * unit; // the key sinks under the pressing finger
-          bgCtx.fillStyle = press > 0.06 ? "rgba(150,196,216,0.96)" : "rgba(236,240,246,0.93)";
-          bgCtx.strokeStyle = "rgba(8,12,18,0.55)";
-          bgCtx.lineWidth = 1.2;
+          for (const tp of tips) if (tp.x >= x && tp.x < x2 && tp.s > press) press = tp.s;
+          const dy = press * 0.05 * unit; // pressed key tilts DOWN at the front (pivots at the back)
+          const fl = far(x), fr = far(x2);
+          // key TOP — near (front) edge tilts down on press; far edge fixed
+          bgCtx.fillStyle = press > 0.06 ? "rgba(150,196,216,0.97)" : "rgba(240,244,249,0.96)";
+          bgCtx.strokeStyle = "rgba(10,14,20,0.5)";
+          bgCtx.lineWidth = 1;
           bgCtx.beginPath();
-          bgCtx.rect(x + 1, kbTop + dy, wKeyW - 2, kbH);
+          bgCtx.moveTo(x, nearY + dy);
+          bgCtx.lineTo(x2, nearY + dy);
+          bgCtx.lineTo(fr[0], fr[1]);
+          bgCtx.lineTo(fl[0], fl[1]);
+          bgCtx.closePath();
+          bgCtx.fill();
+          bgCtx.stroke();
+          // tall FRONT face (faces the viewer)
+          bgCtx.fillStyle = press > 0.06 ? "rgba(112,150,170,0.97)" : "rgba(198,205,214,0.96)";
+          bgCtx.beginPath();
+          bgCtx.moveTo(x, nearY + dy);
+          bgCtx.lineTo(x2, nearY + dy);
+          bgCtx.lineTo(x2, nearY + faceH + dy);
+          bgCtx.lineTo(x, nearY + faceH + dy);
+          bgCtx.closePath();
           bgCtx.fill();
           bgCtx.stroke();
         }
-        // black keys — standard pattern (after white k where k%7 ∈ {0,1,3,4,5})
-        const bkW = wKeyW * 0.6, bkH = kbH * 0.62;
-        bgCtx.fillStyle = "rgba(10,13,18,0.96)";
+        // black keys: raised, set back, receding to the same VP (after white k%7∈{0,1,3,4,5})
+        const bkW = wKeyW * 0.56;
+        bgCtx.fillStyle = "rgba(16,19,25,0.98)";
+        bgCtx.strokeStyle = "rgba(0,0,0,0.7)";
         for (let k = 0; k < nWhite - 1; k++) {
-          if ([0, 1, 3, 4, 5].includes(k % 7)) bgCtx.fillRect(kbLeft + (k + 1) * wKeyW - bkW / 2, kbTop, bkW, bkH);
+          if (![0, 1, 3, 4, 5].includes(k % 7)) continue;
+          const bx = kbLeft + (k + 1) * wKeyW - bkW / 2;
+          const bx2 = bx + bkW;
+          // near edge set back along the recede (start ~12%), far ~60% — shorter than whites
+          const lerp2 = (x, fr2) => { const f = far(x); return [x + (f[0] - x) * fr2, nearY + (f[1] - nearY) * fr2]; };
+          const n0 = lerp2(bx, 0.12), n1 = lerp2(bx2, 0.12), f0 = lerp2(bx, 0.6), f1 = lerp2(bx2, 0.6);
+          bgCtx.beginPath();
+          bgCtx.moveTo(n0[0], n0[1]);
+          bgCtx.lineTo(n1[0], n1[1]);
+          bgCtx.lineTo(f1[0], f1[1]);
+          bgCtx.lineTo(f0[0], f0[1]);
+          bgCtx.closePath();
+          bgCtx.fill();
+          bgCtx.stroke();
         }
         bgCtx.restore();
       }
