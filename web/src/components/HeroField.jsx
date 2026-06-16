@@ -74,6 +74,14 @@ const IDLE_AFTER_MS = 2000; // cursor sitting still this long → relax to the r
 const IDLE_FADE_MS = 700; // ease into that idle over this window (no snap)
 const CLICK_MS = 220; // duration of the index "press" tap when the Send-link button is clicked
 const CLICK_DROP = 1.6 * DEG; // how far the index dips down at the peak of the press (very subtle)
+// Thumbs-up celebration (fires when an email send succeeds): timing + target pose.
+const TU_RISE = 360; // ms to form the gesture
+const TU_HOLD = 2200; // ms to hold it up
+const TU_FALL = 700; // ms to release back to idle
+const TU_FIST_BASE = -26 * DEG; // the four fingers' base angle when curled into the fist
+const TU_FIST_CURL = -64 * DEG; // per-knuckle curl of the fist (× CURL_PROFILE) — firm roll-in
+const TU_THUMB_BASE = 82 * DEG; // thumb base angle → points straight UP (local y-up)
+const TU_THUMB_CURL = -6 * DEG; // nearly straight thumb, a hair of natural bend
 // Idle "playing piano": a looping PHRASE through real keyboard gestures — an
 // ascending scale (thumb→pinky), a chord, an arpeggio, a descending scale, a chord.
 // Each event strikes its finger(s); the arm drifts laterally to follow the run and
@@ -255,6 +263,7 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
     let wristHinge = 0; // eased wrist-joint rotation (hand hinges relative to the forearm)
     let lastIdxTip = null; // index fingertip (canvas px) from the previous frame
     let clickT = -1e9; // timestamp of the last Send-link click (for the index press tap)
+    let sentT = -1e9; // timestamp of a successful email send → triggers the thumbs-up
 
     // per-finger eased state {base, curl}
     const state = FINGERS.map((f) => ({ base: f.rest, curl: f.restCurl }));
@@ -389,6 +398,17 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
       const sinceClick = now - clickT;
       const clickPress = sinceClick >= 0 && sinceClick < CLICK_MS ? Math.sin((sinceClick / CLICK_MS) * Math.PI) : 0;
 
+      // Thumbs-up celebration when an email send succeeds: rise → hold → release
+      // back to the normal idle pose. While it's up, the piano/keyboard fade out
+      // (folded into pianoGate below) and every finger is driven to the gesture.
+      const sinceSent = now - sentT;
+      let thumbsUp = 0;
+      if (sinceSent >= 0 && sinceSent < TU_RISE + TU_HOLD + TU_FALL) {
+        if (sinceSent < TU_RISE) thumbsUp = smoothstep(0, TU_RISE, sinceSent);
+        else if (sinceSent < TU_RISE + TU_HOLD) thumbsUp = 1;
+        else thumbsUp = 1 - smoothstep(TU_RISE + TU_HOLD, TU_RISE + TU_HOLD + TU_FALL, sinceSent);
+      }
+
       const haveCursor = followCursor && mouseX != null;
       const lc = haveCursor ? toLocal(mouseX, mouseY) : null;
 
@@ -401,7 +421,7 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
 
       // Idle piano: run the phrase, dip the wrist on strikes (weight) and drift the
       // arm laterally toward the most-recent note (so it "follows" the run).
-      const pianoGate = 1 - front; // plays in the idle pose, fades while tracking
+      const pianoGate = (1 - front) * (1 - thumbsUp); // idle pose; off while tracking OR thumbs-up
       const phraseT = (t * PIANO_BPS) % PIANO_PHRASE_BEATS;
       const pianoFlexArr = [0, 0, 0, 0, 0];
       let hingeTarget = 0;
@@ -499,6 +519,15 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
         const breathBase = Math.sin(t * 0.5 + i * 0.6) * 2.2 * DEG;
         targetCurl += breathCurl * breathAmt;
         targetBase += breathBase * breathAmt;
+
+        // thumbs-up: override toward the gesture (fist for fingers, raised thumb),
+        // blended by `thumbsUp` so it eases in over the whole pose, breathing and all.
+        if (thumbsUp > 0) {
+          const tuBase = f.name === "thumb" ? TU_THUMB_BASE : TU_FIST_BASE;
+          const tuCurl = f.name === "thumb" ? TU_THUMB_CURL : TU_FIST_CURL;
+          targetBase = lerp(targetBase, tuBase, thumbsUp);
+          targetCurl = lerp(targetCurl, tuCurl, thumbsUp);
+        }
 
         // damp toward targets (no snapping)
         st.base += (targetBase - st.base) * 0.16;
@@ -851,12 +880,16 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
       clearTimeout(resizeTimer);
       resizeTimer = setTimeout(setup, 150);
     }
+    function onSent() {
+      sentT = performance.now();
+    }
 
     setup();
     rafId = requestAnimationFrame(draw);
     if (followCursor) window.addEventListener("mousemove", onMouseMove, { passive: true });
     if (followCursor) window.addEventListener("mousedown", onMouseDown, { passive: true });
     window.addEventListener("resize", onResize);
+    window.addEventListener("vn-email-sent", onSent);
 
     return () => {
       cancelAnimationFrame(rafId);
@@ -864,6 +897,7 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
       if (followCursor) window.removeEventListener("mousemove", onMouseMove);
       if (followCursor) window.removeEventListener("mousedown", onMouseDown);
       window.removeEventListener("resize", onResize);
+      window.removeEventListener("vn-email-sent", onSent);
     };
   }, [scale, followCursor]);
 
