@@ -600,6 +600,50 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
         });
       }
 
+      // --- Idle piano keyboard: fades in with the idle pose. Drawn HERE so it sits
+      // UNDER the hand. The keyboard is fixed (so the lateral run reads as the hand
+      // moving along the keys) and the key under each striking fingertip sinks in
+      // sync with the finger press.
+      if (pianoGate > 0.02) {
+        const tips = fingerJobs.map((job, idx) => ({ x: job.tip[0], y: job.tip[1], s: pianoFlexArr[order[idx]] * pianoGate }));
+        let nMin = Infinity, nMax = -Infinity, sumY = 0;
+        for (const tp of tips) {
+          const nx = tp.x - pianoX; // neutral x (remove the run shift) → a FIXED span
+          nMin = Math.min(nMin, nx);
+          nMax = Math.max(nMax, nx);
+          sumY += tp.y;
+        }
+        const margin = 0.16 * unit + 2 * PIANO_SHIFT;
+        const kbLeft = nMin - margin;
+        const kbW = nMax - nMin + 2 * margin;
+        const kbTop = sumY / tips.length + 0.02 * unit; // key tops just below the resting fingertips
+        const kbH = 0.18 * unit;
+        const nWhite = Math.max(7, Math.round(kbW / (0.16 * unit)));
+        const wKeyW = kbW / nWhite;
+        bgCtx.save();
+        bgCtx.globalAlpha = pianoGate * 0.9;
+        for (let k = 0; k < nWhite; k++) {
+          const x = kbLeft + k * wKeyW;
+          let press = 0;
+          for (const tp of tips) if (tp.x >= x && tp.x < x + wKeyW && tp.s > press) press = tp.s;
+          const dy = press * 0.05 * unit; // the key sinks under the pressing finger
+          bgCtx.fillStyle = press > 0.06 ? "rgba(150,196,216,0.96)" : "rgba(236,240,246,0.93)";
+          bgCtx.strokeStyle = "rgba(8,12,18,0.55)";
+          bgCtx.lineWidth = 1.2;
+          bgCtx.beginPath();
+          bgCtx.rect(x + 1, kbTop + dy, wKeyW - 2, kbH);
+          bgCtx.fill();
+          bgCtx.stroke();
+        }
+        // black keys — standard pattern (after white k where k%7 ∈ {0,1,3,4,5})
+        const bkW = wKeyW * 0.6, bkH = kbH * 0.62;
+        bgCtx.fillStyle = "rgba(10,13,18,0.96)";
+        for (let k = 0; k < nWhite - 1; k++) {
+          if ([0, 1, 3, 4, 5].includes(k % 7)) bgCtx.fillRect(kbLeft + (k + 1) * wKeyW - bkW / 2, kbTop, bkW, bkH);
+        }
+        bgCtx.restore();
+      }
+
       const pathPoly = (c, poly) => {
         c.beginPath();
         c.moveTo(poly[0][0], poly[0][1]);
