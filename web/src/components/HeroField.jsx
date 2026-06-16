@@ -591,10 +591,14 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
         const pianoFlex = pianoFlexArr[i] * PIANO_CURL * pianoGate; // idle key strike for this finger
         const joints = fingerJoints(origin, st.base - pressBase, st.curl - pianoFlex, f.seg, f.prof);
         const contour = smoothClosed(fingerContour(joints, f.w), 2).map(drp);
+        // rest (un-struck) tip: same finger WITHOUT the piano strike / click press, so the
+        // keyboard can be sized off a stable anchor instead of the jittering live tip.
+        const restJoints = fingerJoints(origin, st.base, st.curl, f.seg, f.prof);
         fingerJobs.push({
           poly: contour,
           joints: joints.map(drp),
           tip: drp(joints[joints.length - 1]),
+          restTip: drp(restJoints[restJoints.length - 1]),
           w: f.w,
           capR: f.w * unit * 2.2, // small zone (≈ knuckle-cap size) around the MCP
         });
@@ -606,12 +610,15 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
       // sync with the finger press.
       if (pianoGate > 0.02) {
         const tips = fingerJobs.map((job, idx) => ({ x: job.tip[0], y: job.tip[1], s: pianoFlexArr[order[idx]] * pianoGate }));
+        // Keyboard SIZE/POSITION is anchored to the REST tips (no strike curl, no press)
+        // with the model's run/dip offsets removed → it stays a fixed size and place while
+        // the fingers play. The live `tips` above are still used only to sink struck keys.
         let nMin = Infinity, nMax = -Infinity, sumY = 0;
-        for (const tp of tips) {
-          const nx = tp.x - pianoX; // neutral x (drop the run shift) → a FIXED keyboard
+        for (const job of fingerJobs) {
+          const nx = job.restTip[0] - pianoX; // drop the lateral run → a FIXED keyboard
           nMin = Math.min(nMin, nx);
           nMax = Math.max(nMax, nx);
-          sumY += tp.y;
+          sumY += job.restTip[1] - pianoY; // drop the wrist dip → no vertical bob
         }
         const margin = 0.22 * unit + 2 * PIANO_SHIFT;
         const kbLeft = nMin - margin;
