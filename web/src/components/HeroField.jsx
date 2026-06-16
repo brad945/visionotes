@@ -99,7 +99,7 @@ const PIANO_PHRASE = [
   { t: 23.6, f: [1, 2, 3, 4] }, { t: 24.3, f: [0, 1, 2, 3, 4] },
 ];
 const PIANO_PHRASE_BEATS = 25.2; // loop length in beats (~2× longer)
-const PIANO_BPS = 3.4; // beats per second (tempo) — faster
+const PIANO_BPS = 0.85; // beats per second (tempo) — 4× slower
 const PIANO_CURL = 7 * DEG; // per-knuckle flex at a key strike
 const PIANO_SHIFT = 13; // px the hand drifts laterally per finger-step (arm follows the run)
 const PIANO_DROP = 6; // px the wrist dips on a strike (arm weight into the key)
@@ -419,7 +419,7 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
         pianoX += (recentEv.lat * PIANO_SHIFT * pianoGate - pianoX) * 0.07;
         pianoY += (Math.min(strkSum, 1.6) * PIANO_DROP * pianoGate - pianoY) * 0.3;
         // wrist hinges: a slow undulation + a flex DOWN on each strike (weight).
-        hingeTarget = (Math.sin(t * 1.6) * WRIST_SWAY - Math.min(strkSum, 1.5) * WRIST_FLEX) * pianoGate;
+        hingeTarget = (Math.sin(t * 0.4) * WRIST_SWAY - Math.min(strkSum, 1.5) * WRIST_FLEX) * pianoGate;
       } else {
         pianoX += (0 - pianoX) * 0.07;
         pianoY += (0 - pianoY) * 0.3;
