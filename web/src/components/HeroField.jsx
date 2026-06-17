@@ -171,6 +171,54 @@ const hash01 = (n) => {
   const s = Math.sin(n) * 43758.5453;
   return s - Math.floor(s);
 };
+// --- Dot-morph helpers (the "rearrange into a thumbs-up" effect) ---
+// Sample a set of closed polygons EVENLY along their combined perimeter into N points.
+const samplePolys = (polys, N) => {
+  const segs = [];
+  let total = 0;
+  for (const poly of polys) {
+    for (let i = 0; i < poly.length; i++) {
+      const a = poly[i];
+      const b = poly[(i + 1) % poly.length];
+      const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      if (len > 1e-6) { segs.push([a, b, len]); total += len; }
+    }
+  }
+  const pts = [];
+  if (!total) return pts;
+  const step = total / N;
+  let si = 0, acc = 0;
+  for (let n = 0; n < N; n++) {
+    const d = n * step;
+    while (si < segs.length - 1 && acc + segs[si][2] < d) { acc += segs[si][2]; si++; }
+    const [a, b, len] = segs[si];
+    const t = (d - acc) / len;
+    pts.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]);
+  }
+  return pts;
+};
+// Order points by angle around their centroid → matching index i↔i between two shapes
+// gives a radial correspondence (angle θ → angle θ), so dots flow smoothly, not crossed.
+const orderByAngle = (pts) => {
+  let cx = 0, cy = 0;
+  for (const p of pts) { cx += p[0]; cy += p[1]; }
+  cx /= pts.length || 1;
+  cy /= pts.length || 1;
+  return pts.slice().sort((p, q) => Math.atan2(p[1] - cy, p[0] - cx) - Math.atan2(q[1] - cy, q[0] - cx));
+};
+// Closed capsule polygon (local coords) from A→B, half-width hwA tapering to hwB.
+const capsuleLocal = (a, b, hwA, hwB) => {
+  const ang = Math.atan2(b[1] - a[1], b[0] - a[0]);
+  const out = [];
+  for (let i = 0; i <= 14; i++) { const t = ang - Math.PI / 2 + Math.PI * (i / 14); out.push([b[0] + Math.cos(t) * hwB, b[1] + Math.sin(t) * hwB]); }
+  for (let i = 0; i <= 14; i++) { const t = ang + Math.PI / 2 + Math.PI * (i / 14); out.push([a[0] + Math.cos(t) * hwA, a[1] + Math.sin(t) * hwA]); }
+  return out;
+};
+const MORPH_PAUSE_IN = 240; // ms: brief freeze of the hand (as dots) before flying
+const MORPH_RISE = 1150; // ms: hand dots fly into the thumbs-up (smooth)
+const MORPH_HOLD = 1800; // ms: hold the static thumbs-up
+const MORPH_FALL = 1150; // ms: flow back to the hand
+const MORPH_PAUSE_OUT = 240; // ms: brief freeze before resuming play
 // Catmull-Rom through a CLOSED ring of control points → a denser, rounded ring.
 // Turns the blocky forearm/palm polygons into smooth organic curves.
 const smoothClosed = (pts, sub) => {
@@ -255,6 +303,10 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
     let wristHinge = 0; // eased wrist-joint rotation (hand hinges relative to the forearm)
     let lastIdxTip = null; // index fingertip (canvas px) from the previous frame
     let clickT = -1e9; // timestamp of the last Send-link click (for the index press tap)
+    let sentT = -1e9; // timestamp of a successful email send → triggers the dot morph
+    let morphSrc = null; // hand dots snapshot (captured at trigger) → morph source
+    let morphTgt = null; // thumbs-up dots → morph target (one per source dot)
+    let morphFade = null; // per-dot: true = an EXCESS dot that fades out at the thumbs-up
 
     // per-finger eased state {base, curl}
     const state = FINGERS.map((f) => ({ base: f.rest, curl: f.restCurl }));
@@ -399,9 +451,27 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
       const idleActive = 1 - smoothstep(IDLE_AFTER_MS, IDLE_AFTER_MS + IDLE_FADE_MS, now - lastMove);
       const front = lc ? smoothstep(FRONT_LO, FRONT_HI, lc[0]) * idleActive : 0;
 
+      // Dot-morph sequence for the thumbs-up: PAUSE (hand frozen as dots) → RISE (fly to
+      // thumbs-up) → HOLD → FALL (fly back) → PAUSE (frozen) → resume. The pauses make it
+      // obvious the SAME dots form both the hand and the thumbs-up. `morph` = 0 (hand) → 1
+      // (thumbs-up). `inMorphSeq` = the whole sequence (the hand is frozen throughout it).
+      const sinceSent = now - sentT;
+      const MORPH_TOTAL = MORPH_PAUSE_IN + MORPH_RISE + MORPH_HOLD + MORPH_FALL + MORPH_PAUSE_OUT;
+      const inMorphSeq = sinceSent >= 0 && sinceSent < MORPH_TOTAL;
+      let morph = 0;
+      if (inMorphSeq) {
+        const r0 = MORPH_PAUSE_IN, r1 = r0 + MORPH_RISE, h1 = r1 + MORPH_HOLD, f1 = h1 + MORPH_FALL;
+        if (sinceSent < r0) morph = 0; // pause on the hand
+        else if (sinceSent < r1) morph = smoothstep(r0, r1, sinceSent); // fly out
+        else if (sinceSent < h1) morph = 1; // hold thumbs-up
+        else if (sinceSent < f1) morph = 1 - smoothstep(h1, f1, sinceSent); // fly back
+        else morph = 0; // pause on the hand
+      }
+
       // Idle piano: run the phrase, dip the wrist on strikes (weight) and drift the
       // arm laterally toward the most-recent note (so it "follows" the run).
-      const pianoGate = 1 - front; // plays in the idle pose, fades while tracking
+      const pianoGate = (1 - front) * (inMorphSeq ? 0 : 1); // off during the whole morph
+      const handFrozen = inMorphSeq; // freeze the hand pose so the dots hold + resume cleanly
       const phraseT = (t * PIANO_BPS) % PIANO_PHRASE_BEATS;
       const pianoFlexArr = [0, 0, 0, 0, 0];
       let hingeTarget = 0;
@@ -420,11 +490,11 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
         pianoY += (Math.min(strkSum, 1.6) * PIANO_DROP * pianoGate - pianoY) * 0.3;
         // wrist hinges: a slow undulation + a flex DOWN on each strike (weight).
         hingeTarget = (Math.sin(t * 0.4) * WRIST_SWAY - Math.min(strkSum, 1.5) * WRIST_FLEX) * pianoGate;
-      } else {
+      } else if (!handFrozen) {
         pianoX += (0 - pianoX) * 0.07;
         pianoY += (0 - pianoY) * 0.3;
       }
-      wristHinge += (hingeTarget - wristHinge) * 0.25; // eased wrist bend
+      if (!handFrozen) wristHinge += (hingeTarget - wristHinge) * 0.25; // eased wrist bend
       const handRot = -HAND_DROOP + wristHinge; // hand's rotation about the wrist (dynamic)
 
       // Arm lift: hinge the hand up at the elbow when the cursor is high AND close
@@ -437,7 +507,7 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
         const elev = clamp((lc[1] - LIFT_REST_Y) / LIFT_RANGE, 0, 1);
         liftTarget = MAX_LIFT * prox * elev * front;
       }
-      armLift += (liftTarget - armLift) * 0.12;
+      if (!handFrozen) armLift += (liftTarget - armLift) * 0.12;
 
       FINGERS.forEach((f, i) => {
         const st = state[i];
@@ -501,8 +571,10 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
         targetBase += breathBase * breathAmt;
 
         // damp toward targets (no snapping)
-        st.base += (targetBase - st.base) * 0.16;
-        st.curl += (targetCurl - st.curl) * 0.16;
+        if (!handFrozen) {
+          st.base += (targetBase - st.base) * 0.16;
+          st.curl += (targetCurl - st.curl) * 0.16;
+        }
       });
 
       const pal = PALETTES[themeRef.current === "light" ? "light" : "dark"];
@@ -708,7 +780,9 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
       // `against`. Dots are scattered off the line (perpendicular jitter), sized
       // unevenly, and spaced unevenly — smaller + denser than a clean stroke — so
       // the silhouette reads organic/hand-stippled, not stamped on a perfect path.
-      const outline = (c, poly, against, seed, baseGate) => {
+      // `collect` (optional): instead of drawing, push each dot's [x, y, r] into it — used
+      // to capture the hand's EXACT dots so the morph reuses them (not a fresh dot set).
+      const outline = (c, poly, against, seed, baseGate, collect) => {
         let carry = 0;
         let k = seed;
         for (let i = 0; i < poly.length; i++) {
@@ -751,9 +825,13 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
             }
             if (!hidden) {
               const r = 0.85 + hash01(k * 78.233) * 0.7; // 0.85–1.55px, mostly small
-              c.beginPath();
-              c.arc(x, y, r, 0, Math.PI * 2);
-              c.fill();
+              if (collect) {
+                collect.push([x, y, r]);
+              } else {
+                c.beginPath();
+                c.arc(x, y, r, 0, Math.PI * 2);
+                c.fill();
+              }
             }
             d += 3.8 + hash01(k * 39.42) * 2.2; // 3.8–6.0px gaps → denser than before
           }
@@ -768,72 +846,132 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
       // lines that produced. Only the base-merge (a finger fusing into the hand at
       // its MCP) still needs an explicit gate, since the palm is drawn before it.
 
-      // 1) body mass (forearm + palm), filled then outlined as one union. The
-      //    finger fills drawn next will cover the palm edge where fingers are in
-      //    front; here we only suppress the forearm⇄palm seam against each other.
-      for (const p of bodyPolys) {
-        ctx.fillStyle = fill;
-        pathPoly(ctx, p);
-        ctx.fill();
-      }
+      // Dot morph: on a successful send (vn-email-sent), the HAND (palm + fingers) dots
+      // fly into a static THUMBS-UP (fist + thumb) and back. The FOREARM stays normal.
+      // (`morph` was computed earlier so the keyboard could fade with it.)
+      // 1) FOREARM — always drawn normally (forearm = bodyPolys[0]; palm = bodyPolys[1]).
+      ctx.fillStyle = fill;
+      pathPoly(ctx, bodyPolys[0]);
+      ctx.fill();
       ctx.fillStyle = dot;
-      bodyPolys.forEach((p, idx) => outline(ctx, p, bodyPolys.filter((q) => q !== p), 11.3 + idx * 100));
+      outline(ctx, bodyPolys[0], [bodyPolys[1]], 11.3);
 
-      // 2) fingers, back→front: fill + knuckle dots + mint tip, THEN outline. The
-      //    NEXT (more-front) finger's fill paints over this finger's outline where
-      //    they overlap — clean depth occlusion.
-      for (let fi = 0; fi < fingerJobs.length; fi++) {
-        const job = fingerJobs[fi];
-        ctx.fillStyle = fill;
-        pathPoly(ctx, job.poly);
-        ctx.fill();
-        // joint dots from the MCP (knuckle) through the inner joints — the MCP dot
-        // (kk=0) defines each finger where it connects to the hand, since the open
-        // "U" outline leaves the knuckle end bare. Tip gets the mint dot below.
-        if (SHOW_JOINT_DOTS) {
-          ctx.fillStyle = dot;
-          for (let kk = 0; kk < job.joints.length - 1; kk++) {
-            ctx.beginPath();
-            ctx.arc(job.joints[kk][0], job.joints[kk][1], Math.max(1.7, job.w * unit * 0.22), 0, Math.PI * 2);
-            ctx.fill();
+      if (inMorphSeq) {
+        // ONCE, at trigger: snapshot the hand's EXACT dots (so the morph reuses the SAME
+        // dots, not a fresh set) and build a same-count thumbs-up target.
+        if (!morphSrc) {
+          const src = [];
+          outline(ctx, bodyPolys[1], [bodyPolys[0]], 111.3, null, src); // palm dots
+          for (let fi = 0; fi < fingerJobs.length; fi++) {
+            const job = fingerJobs[fi];
+            const mcp = job.joints[0];
+            outline(ctx, job.poly, [], 67.7 + fi * 100, { polys: bodyPolys, cx: mcp[0], cy: mcp[1], r2: job.capR * job.capR }, src);
           }
+          morphSrc = orderByAngle(src);
+          const H = morphSrc.length;
+          // ONE closed thumbs-up silhouette (local coords) → clean single outline (no
+          // internal seams): fist block on the right, thumb up the left, web notch between.
+          const tuShape = smoothClosed([
+            [0.16, 0.14], // heel — connects to the forearm/wrist
+            [0.2, 0.36], // fist left side
+            [0.24, 0.54], // thumb base (left)
+            [0.22, 0.78], // thumb left
+            [0.26, 0.98], // thumb upper-left
+            [0.34, 1.05], // thumb tip
+            [0.4, 0.95], // thumb right
+            [0.38, 0.72], // thumb lower-right
+            [0.44, 0.58], // WEB NOTCH (concave dip between thumb and fist)
+            [0.58, 0.64], // knuckle ridge
+            [0.7, 0.58], // fist top-right
+            [0.76, 0.36], // fist right side
+            [0.7, 0.12], // fist bottom-right
+            [0.42, 0.06], // fist bottom
+          ], 5);
+          const tuCanvas = tuShape.map((p) => toCanvas(p));
+          morphTgt = orderByAngle(samplePolys([tuCanvas], H)); // one target per source dot
+          // The thumbs-up perimeter is SHORTER than the hand's → keep only enough dots for
+          // matching spacing and FADE the rest out during the fly-out (no clumping).
+          const perim = (poly) => { let s = 0; for (let i = 0; i < poly.length; i++) { const a = poly[i], b = poly[(i + 1) % poly.length]; s += Math.hypot(b[0] - a[0], b[1] - a[1]); } return s; };
+          let pHand = perim(bodyPolys[1]);
+          for (const job of fingerJobs) pHand += perim(job.poly);
+          const step = Math.max(1, Math.round(pHand / Math.max(perim(tuCanvas), 1))); // keep every step-th
+          morphFade = morphSrc.map((_, i) => i % step !== 0); // true = excess dot → fades out
         }
-        if (SHOW_TIP_DOTS) {
-          ctx.fillStyle = accent;
+        // fade the hand FILL out as the dots leave it
+        const fillA = clamp(1 - morph * 1.7, 0, 1);
+        if (fillA > 0.01) {
+          ctx.globalAlpha = MODEL_ALPHA * fillA;
+          ctx.fillStyle = fill;
+          pathPoly(ctx, bodyPolys[1]);
+          ctx.fill();
+          for (const job of fingerJobs) { pathPoly(ctx, job.poly); ctx.fill(); }
+          ctx.globalAlpha = MODEL_ALPHA;
+        }
+        // the morphing DOTS — the SAME dots throughout; excess ones fade out at the apex.
+        ctx.fillStyle = dot;
+        const H = morphSrc.length;
+        let curA = -1;
+        for (let i = 0; i < H; i++) {
+          const a = morphFade[i] ? 1 - morph : 1; // excess dots fade as they reach the thumbs-up
+          if (a <= 0.02) continue;
+          const s = morphSrc[i], t = morphTgt[i];
+          // slight per-dot scatter (grows with the morph) so the settled outline reads
+          // hand-stippled like the rest of the rig, not a perfect stamped path.
+          const jx = (hash01(i * 12.9898) - 0.5) * 2.6 * morph;
+          const jy = (hash01(i * 7.717) - 0.5) * 2.6 * morph;
+          const x = s[0] + (t[0] - s[0]) * morph + jx;
+          const y = s[1] + (t[1] - s[1]) * morph + jy;
+          const ga = MODEL_ALPHA * a;
+          if (ga !== curA) { ctx.globalAlpha = ga; curA = ga; }
           ctx.beginPath();
-          ctx.arc(job.tip[0], job.tip[1], job.w * TIP_RATIO * unit * 0.5, 0, Math.PI * 2);
+          ctx.arc(x, y, s[2], 0, Math.PI * 2); // reuse the captured dot radius
           ctx.fill();
         }
-        // outline now (closed silhouette, both ends capped). Finger-vs-finger
-        // occlusion is handled by the later fills painting over it. The only
-        // suppression is the knuckle-merge gate: clear the cap where it bulges into
-        // the wrist/palm, so a finger reaching across merges in at the knuckle.
+        ctx.globalAlpha = MODEL_ALPHA;
+      } else {
+        morphSrc = null;
+        // 2) palm — fill + outline (suppress the forearm⇄palm seam)
+        ctx.fillStyle = fill;
+        pathPoly(ctx, bodyPolys[1]);
+        ctx.fill();
         ctx.fillStyle = dot;
-        const mcp = job.joints[0];
-        outline(ctx, job.poly, [], 67.7 + fi * 100, {
-          polys: bodyPolys,
-          cx: mcp[0],
-          cy: mcp[1],
-          r2: job.capR * job.capR,
-        });
-      }
+        outline(ctx, bodyPolys[1], [bodyPolys[0]], 111.3);
 
-      // Foreground layer: redraw ONLY the index finger on the top canvas, so it sits
-      // ABOVE the form while the rest of the hand (already drawn on bgCtx) stays
-      // behind it. The index is fingerJobs[3] (draw order [4,3,2,1,0]).
-      const idxJob = fingerJobs[3];
-      if (idxJob) {
-        fgCtx.fillStyle = fill;
-        pathPoly(fgCtx, idxJob.poly);
-        fgCtx.fill();
-        fgCtx.fillStyle = dot;
-        const im = idxJob.joints[0];
-        outline(fgCtx, idxJob.poly, [], 67.7 + 3 * 100, {
-          polys: bodyPolys,
-          cx: im[0],
-          cy: im[1],
-          r2: idxJob.capR * idxJob.capR,
-        });
+        // 3) fingers, back→front: fill THEN outline (later fills occlude earlier outlines).
+        for (let fi = 0; fi < fingerJobs.length; fi++) {
+          const job = fingerJobs[fi];
+          ctx.fillStyle = fill;
+          pathPoly(ctx, job.poly);
+          ctx.fill();
+          if (SHOW_JOINT_DOTS) {
+            ctx.fillStyle = dot;
+            for (let kk = 0; kk < job.joints.length - 1; kk++) {
+              ctx.beginPath();
+              ctx.arc(job.joints[kk][0], job.joints[kk][1], Math.max(1.7, job.w * unit * 0.22), 0, Math.PI * 2);
+              ctx.fill();
+            }
+          }
+          if (SHOW_TIP_DOTS) {
+            ctx.fillStyle = accent;
+            ctx.beginPath();
+            ctx.arc(job.tip[0], job.tip[1], job.w * TIP_RATIO * unit * 0.5, 0, Math.PI * 2);
+            ctx.fill();
+          }
+          ctx.fillStyle = dot;
+          const mcp = job.joints[0];
+          outline(ctx, job.poly, [], 67.7 + fi * 100, { polys: bodyPolys, cx: mcp[0], cy: mcp[1], r2: job.capR * job.capR });
+        }
+
+        // 4) Foreground layer: redraw ONLY the index finger on the top canvas (above the form).
+        const idxJob = fingerJobs[3];
+        if (idxJob) {
+          fgCtx.fillStyle = fill;
+          pathPoly(fgCtx, idxJob.poly);
+          fgCtx.fill();
+          fgCtx.fillStyle = dot;
+          const im = idxJob.joints[0];
+          outline(fgCtx, idxJob.poly, [], 67.7 + 3 * 100, { polys: bodyPolys, cx: im[0], cy: im[1], r2: idxJob.capR * idxJob.capR });
+        }
       }
 
       rafId = requestAnimationFrame(draw);
@@ -853,12 +991,17 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
       clearTimeout(resizeTimer);
       resizeTimer = setTimeout(setup, 150);
     }
+    function onSent() {
+      sentT = performance.now();
+      morphSrc = null; // re-snapshot the hand dots on the trigger frame
+    }
 
     setup();
     rafId = requestAnimationFrame(draw);
     if (followCursor) window.addEventListener("mousemove", onMouseMove, { passive: true });
     if (followCursor) window.addEventListener("mousedown", onMouseDown, { passive: true });
     window.addEventListener("resize", onResize);
+    window.addEventListener("vn-email-sent", onSent);
 
     return () => {
       cancelAnimationFrame(rafId);
@@ -866,6 +1009,7 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
       if (followCursor) window.removeEventListener("mousemove", onMouseMove);
       if (followCursor) window.removeEventListener("mousedown", onMouseDown);
       window.removeEventListener("resize", onResize);
+      window.removeEventListener("vn-email-sent", onSent);
     };
   }, [scale, followCursor]);
 
