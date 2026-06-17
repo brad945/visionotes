@@ -67,8 +67,10 @@ const rotW = (p, ang) => {
 // "Good zone": the cursor is right of the thumb knuckle. Left of it (over the
 // wrist/forearm or behind the hand) the fingers smoothly relax to rest instead
 // of whipping around an ill-defined aim direction.
-const FRONT_X = 0.6; // HARD threshold: cursor LEFT of here → instantly switch to the idle
-//                      piano (no blend zone); right of here → track the cursor.
+const FRONT_X = 0.6; // threshold: cursor LEFT of here → (after a grace) fade to the idle
+//                      piano; right of here → track the cursor.
+const LEFT_DELAY = 500; // ms to HOLD after the cursor crosses left, before fading to piano
+const LEFT_FADE = 600; // ms to fade into the piano once the grace elapses
 const IDLE_AFTER_MS = 2000; // cursor sitting still this long → relax to the rest pose too
 const IDLE_FADE_MS = 700; // ease into that idle over this window (no snap)
 const CLICK_MS = 220; // duration of the index "press" tap when the Send-link button is clicked
@@ -308,6 +310,7 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
     let wristHinge = 0; // eased wrist-joint rotation (hand hinges relative to the forearm)
     let lastIdxTip = null; // index fingertip (canvas px) from the previous frame
     let clickT = -1e9; // timestamp of the last Send-link click (for the index press tap)
+    let leftAt = -1; // timestamp the cursor crossed LEFT of FRONT_X (-1 = currently right)
     let sentT = -1e9; // timestamp of a successful email send → triggers the dot morph
     let morphSrc = null; // hand dots snapshot (captured at trigger) → morph source
     let morphTgt = null; // thumbs-up dots → morph target (one per source dot)
@@ -455,9 +458,13 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
       // cursor is. 0 when it's over the wrist/forearm or behind → fingers relax.
       // Idle when the cursor is too far left OR hasn't moved for IDLE_AFTER_MS.
       const idleActive = 1 - smoothstep(IDLE_AFTER_MS, IDLE_AFTER_MS + IDLE_FADE_MS, now - lastMove);
-      // HARD spatial gate (not a smoothstep blend): crossing FRONT_X flips tracking ↔ piano
-      // instantly. The pose still eases to the new target, but there's no half-state zone.
-      const front = lc ? (lc[0] > FRONT_X ? 1 : 0) * idleActive : 0;
+      // Spatial gate: while the cursor is RIGHT of FRONT_X → track (1). Once it crosses
+      // LEFT, HOLD for LEFT_DELAY ms, then fade to 0 over LEFT_FADE ms → the idle piano.
+      const cursorLeft = lc ? lc[0] <= FRONT_X : true;
+      if (!cursorLeft) leftAt = -1; // back in the tracking zone → reset the timer
+      else if (leftAt < 0) leftAt = now; // just crossed left → start the grace timer
+      const spatialGate = !lc ? 0 : cursorLeft ? 1 - smoothstep(LEFT_DELAY, LEFT_DELAY + LEFT_FADE, now - leftAt) : 1;
+      const front = spatialGate * idleActive;
 
       // Dot-morph sequence for the thumbs-up: PAUSE (hand frozen as dots) → RISE (fly to
       // thumbs-up) → HOLD → FALL (fly back) → PAUSE (frozen) → resume. The pauses make it
