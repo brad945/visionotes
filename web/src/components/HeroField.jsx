@@ -878,7 +878,7 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
           // wrist/cuff faces the forearm (which enters from the left), and anchor the wrist
           // at the forearm tip so it reads as one continuous arm → thumbs-up. Tune here.
           const EMOJI_S = 0.95, EMOJI_ROT = -0.24; // scale + slight clockwise tilt (radians, y-up)
-          const EMOJI_OX = 0.2, EMOJI_OY = 0.17; // anchor: the emoji wrist sits at the forearm tip
+          const EMOJI_OX = 0.08, EMOJI_OY = 0.13; // anchor: wrist OVERLAPS the forearm tip (buries it)
           const pvx = 0.12, pvy = 0.14; // pivot ≈ the emoji's wrist (rotate about it)
           const cR = Math.cos(EMOJI_ROT), sR = Math.sin(EMOJI_ROT);
           const E = EMOJI_THUMB.length;
