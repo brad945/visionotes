@@ -901,7 +901,8 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
           let wp = eCanvas[0], wpProj = -Infinity;
           for (const p of eCanvas) { const pr = (p[0] - armTip[0]) * aux + (p[1] - armTip[1]) * auy; if (pr > wpProj) { wpProj = pr; wp = p; } }
           const ov = 0.2 * unit; // bury the wrist this far into the forearm tip (deep overlap)
-          const sx = armTip[0] + aux * ov - wp[0], sy = armTip[1] + auy * ov - wp[1];
+          const drop = 0.07 * unit; // sit the hand slightly LOWER relative to the arm
+          const sx = armTip[0] + aux * ov - wp[0], sy = armTip[1] + auy * ov - wp[1] + drop;
           eCanvas = eCanvas.map((p) => [p[0] + sx, p[1] + sy]);
           // the FILL silhouette, through the SAME transform + shift (drawn behind the dots)
           morphFill = EMOJI_FILL.map((p) => { const c = mapPt(p); return [c[0] + sx, c[1] + sy]; });
