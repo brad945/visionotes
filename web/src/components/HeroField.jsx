@@ -311,6 +311,7 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
     let lastIdxTip = null; // index fingertip (canvas px) from the previous frame
     let clickT = -1e9; // timestamp of the last Send-link click (for the index press tap)
     let leftAt = -1; // timestamp the cursor crossed LEFT of FRONT_X (-1 = currently right)
+    let lastLc = null; // last cursor pos while in the tracking zone (held when it goes left)
     let sentT = -1e9; // timestamp of a successful email send → triggers the dot morph
     let morphSrc = null; // hand dots snapshot (captured at trigger) → morph source
     let morphTgt = null; // thumbs-up dots → morph target (one per source dot)
@@ -461,10 +462,13 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
       // Spatial gate: while the cursor is RIGHT of FRONT_X → track (1). Once it crosses
       // LEFT, HOLD for LEFT_DELAY ms, then fade to 0 over LEFT_FADE ms → the idle piano.
       const cursorLeft = lc ? lc[0] <= FRONT_X : true;
-      if (!cursorLeft) leftAt = -1; // back in the tracking zone → reset the timer
+      if (!cursorLeft) { leftAt = -1; lastLc = lc; } // in the tracking zone → reset + remember pose
       else if (leftAt < 0) leftAt = now; // just crossed left → start the grace timer
       const spatialGate = !lc ? 0 : cursorLeft ? 1 - smoothstep(LEFT_DELAY, LEFT_DELAY + LEFT_FADE, now - leftAt) : 1;
       const front = spatialGate * idleActive;
+      // While the cursor is LEFT of the line, STOP tracking it — aim at the LAST in-zone
+      // position so the hand HOLDS that pose (then `front` fades it into the piano).
+      const aimLc = cursorLeft && lastLc ? lastLc : lc;
 
       // Dot-morph sequence for the thumbs-up: PAUSE (hand frozen as dots) → RISE (fly to
       // thumbs-up) → HOLD → FALL (fly back) → PAUSE (frozen) → resume. The pauses make it
@@ -516,10 +520,10 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
       // AND in the good zone. Gated on the RESTING middle knuckle (never the lifted
       // one) so it can't feed back on itself. Eased for flow.
       let liftTarget = 0;
-      if (lc) {
+      if (aimLc) {
         const ref = FINGERS[2].mcp; // resting middle knuckle
-        const prox = clamp(1 - Math.hypot(lc[0] - ref[0], lc[1] - ref[1]) / LIFT_RADIUS, 0, 1);
-        const elev = clamp((lc[1] - LIFT_REST_Y) / LIFT_RANGE, 0, 1);
+        const prox = clamp(1 - Math.hypot(aimLc[0] - ref[0], aimLc[1] - ref[1]) / LIFT_RADIUS, 0, 1);
+        const elev = clamp((aimLc[1] - LIFT_REST_Y) / LIFT_RANGE, 0, 1);
         liftTarget = MAX_LIFT * prox * elev * front;
       }
       if (!handFrozen) armLift += (liftTarget - armLift) * 0.12;
@@ -529,12 +533,12 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
         let targetBase = f.rest;
         let targetCurl = f.restCurl;
 
-        if (lc) {
-          // Tip-IK: aim THIS fingertip at the cursor. Measured from the finger's
-          // LIFTED knuckle (the hand may have hinged up), in the local frame.
-          // hand is displayed drooped by HAND_DROOP, so aim at the cursor rotated
-          // into the un-drooped frame (keeps the fingertip on the real cursor).
-          const aim = rotW(lc, -handRot);
+        if (aimLc) {
+          // Tip-IK: aim THIS fingertip at the cursor (or the HELD pos when it's gone left).
+          // Measured from the finger's LIFTED knuckle (the hand may have hinged up), in the
+          // local frame. hand is displayed drooped by HAND_DROOP, so aim at the cursor
+          // rotated into the un-drooped frame (keeps the fingertip on the real cursor).
+          const aim = rotW(aimLc, -handRot);
           const mcp = liftLocal([f.mcp[0] + FINGER_OFFSET[0], f.mcp[1] + FINGER_OFFSET[1]], armLift);
           const dx = aim[0] - mcp[0];
           const dy = aim[1] - mcp[1];
