@@ -219,6 +219,10 @@ const MORPH_RISE = 1150; // ms: hand dots fly into the thumbs-up (smooth)
 const MORPH_HOLD = 1800; // ms: hold the static thumbs-up
 const MORPH_FALL = 1150; // ms: flow back to the hand
 const MORPH_PAUSE_OUT = 240; // ms: brief freeze before resuming play
+// EXACT Google thumbs-up emoji outline + internal finger lines, extracted from the
+// PNG as evenly-spaced edge points (normalized [x,y], y-up). The dot morph lands on
+// these → the dots form that emoji precisely. Mapped into the hand frame at runtime.
+const EMOJI_THUMB = [[0.085,0.165],[0.076,0.192],[0.071,0.214],[0.103,0.152],[0.067,0.237],[0.062,0.259],[0.058,0.290],[0.125,0.152],[0.058,0.312],[0.058,0.335],[0.134,0.170],[0.058,0.357],[0.147,0.152],[0.058,0.379],[0.156,0.174],[0.062,0.402],[0.170,0.152],[0.062,0.424],[0.179,0.179],[0.188,0.161],[0.067,0.446],[0.205,0.152],[0.071,0.469],[0.201,0.183],[0.080,0.487],[0.228,0.152],[0.223,0.183],[0.089,0.504],[0.250,0.147],[0.241,0.192],[0.268,0.134],[0.112,0.504],[0.241,0.214],[0.286,0.121],[0.263,0.188],[0.134,0.500],[0.277,0.170],[0.304,0.107],[0.295,0.152],[0.321,0.094],[0.156,0.500],[0.312,0.138],[0.339,0.080],[0.330,0.125],[0.357,0.071],[0.174,0.509],[0.348,0.112],[0.379,0.062],[0.366,0.103],[0.196,0.504],[0.384,0.094],[0.402,0.058],[0.214,0.513],[0.402,0.085],[0.424,0.049],[0.246,0.473],[0.232,0.522],[0.424,0.080],[0.250,0.496],[0.446,0.045],[0.254,0.518],[0.446,0.076],[0.272,0.504],[0.469,0.045],[0.263,0.536],[0.469,0.071],[0.281,0.522],[0.272,0.554],[0.491,0.040],[0.491,0.067],[0.290,0.540],[0.286,0.571],[0.513,0.040],[0.304,0.558],[0.513,0.067],[0.299,0.589],[0.536,0.036],[0.321,0.571],[0.536,0.067],[0.317,0.598],[0.554,0.045],[0.335,0.589],[0.554,0.076],[0.571,0.036],[0.326,0.616],[0.455,0.326],[0.571,0.085],[0.473,0.317],[0.353,0.603],[0.594,0.036],[0.344,0.625],[0.558,0.125],[0.549,0.147],[0.567,0.107],[0.469,0.344],[0.491,0.295],[0.522,0.232],[0.513,0.254],[0.504,0.277],[0.362,0.634],[0.616,0.036],[0.371,0.616],[0.487,0.353],[0.638,0.031],[0.375,0.652],[0.384,0.634],[0.500,0.371],[0.643,0.062],[0.656,0.040],[0.393,0.661],[0.518,0.384],[0.674,0.031],[0.402,0.679],[0.674,0.054],[0.527,0.402],[0.643,0.138],[0.696,0.027],[0.420,0.692],[0.652,0.156],[0.540,0.420],[0.429,0.710],[0.719,0.027],[0.549,0.438],[0.670,0.165],[0.438,0.728],[0.554,0.460],[0.741,0.027],[0.670,0.210],[0.679,0.192],[0.692,0.161],[0.558,0.482],[0.446,0.746],[0.759,0.036],[0.562,0.504],[0.455,0.763],[0.701,0.188],[0.714,0.161],[0.562,0.527],[0.670,0.286],[0.460,0.786],[0.781,0.031],[0.562,0.549],[0.723,0.183],[0.737,0.156],[0.562,0.571],[0.464,0.808],[0.656,0.362],[0.683,0.304],[0.670,0.339],[0.562,0.594],[0.799,0.040],[0.469,0.830],[0.746,0.179],[0.759,0.152],[0.562,0.616],[0.469,0.853],[0.808,0.058],[0.692,0.335],[0.705,0.304],[0.652,0.433],[0.567,0.638],[0.469,0.875],[0.768,0.174],[0.781,0.152],[0.817,0.076],[0.469,0.897],[0.661,0.451],[0.576,0.656],[0.714,0.335],[0.728,0.304],[0.469,0.920],[0.790,0.170],[0.821,0.098],[0.804,0.147],[0.656,0.500],[0.585,0.674],[0.817,0.129],[0.473,0.942],[0.683,0.455],[0.607,0.638],[0.737,0.335],[0.750,0.304],[0.674,0.487],[0.812,0.165],[0.594,0.692],[0.607,0.661],[0.826,0.147],[0.625,0.629],[0.487,0.960],[0.759,0.330],[0.652,0.585],[0.705,0.460],[0.772,0.304],[0.696,0.487],[0.603,0.710],[0.616,0.679],[0.844,0.156],[0.643,0.638],[0.504,0.969],[0.661,0.603],[0.621,0.701],[0.612,0.728],[0.781,0.330],[0.728,0.460],[0.795,0.304],[0.719,0.487],[0.862,0.165],[0.665,0.634],[0.616,0.750],[0.629,0.719],[0.527,0.969],[0.679,0.612],[0.804,0.330],[0.817,0.304],[0.750,0.464],[0.871,0.183],[0.634,0.741],[0.741,0.491],[0.625,0.768],[0.683,0.643],[0.549,0.964],[0.625,0.790],[0.701,0.616],[0.879,0.201],[0.826,0.330],[0.839,0.308],[0.772,0.469],[0.763,0.491],[0.567,0.955],[0.634,0.808],[0.705,0.643],[0.884,0.223],[0.629,0.830],[0.585,0.942],[0.848,0.326],[0.723,0.621],[0.625,0.853],[0.621,0.875],[0.888,0.246],[0.603,0.920],[0.786,0.491],[0.612,0.902],[0.795,0.473],[0.884,0.268],[0.866,0.312],[0.723,0.652],[0.879,0.290],[0.746,0.621],[0.817,0.473],[0.808,0.496],[0.879,0.330],[0.746,0.647],[0.763,0.629],[0.835,0.482],[0.893,0.348],[0.763,0.656],[0.786,0.629],[0.844,0.500],[0.902,0.366],[0.786,0.652],[0.862,0.491],[0.906,0.388],[0.808,0.629],[0.906,0.411],[0.866,0.513],[0.879,0.482],[0.808,0.652],[0.902,0.433],[0.893,0.460],[0.830,0.625],[0.871,0.536],[0.830,0.647],[0.871,0.558],[0.853,0.616],[0.866,0.589]];
 // Catmull-Rom through a CLOSED ring of control points → a denser, rounded ring.
 // Turns the blocky forearm/palm polygons into smooth organic curves.
 const smoothClosed = (pts, sub) => {
@@ -869,33 +873,24 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
           }
           morphSrc = orderByAngle(src);
           const H = morphSrc.length;
-          // ONE closed thumbs-up silhouette (local coords) → clean single outline (no
-          // internal seams): fist block on the right, thumb up the left, web notch between.
-          const tuShape = smoothClosed([
-            [0.16, 0.14], // heel — connects to the forearm/wrist
-            [0.2, 0.36], // fist left side
-            [0.24, 0.54], // thumb base (left)
-            [0.22, 0.78], // thumb left
-            [0.26, 0.98], // thumb upper-left
-            [0.34, 1.05], // thumb tip
-            [0.4, 0.95], // thumb right
-            [0.38, 0.72], // thumb lower-right
-            [0.44, 0.58], // WEB NOTCH (concave dip between thumb and fist)
-            [0.58, 0.64], // knuckle ridge
-            [0.7, 0.58], // fist top-right
-            [0.76, 0.36], // fist right side
-            [0.7, 0.12], // fist bottom-right
-            [0.42, 0.06], // fist bottom
-          ], 5);
-          const tuCanvas = tuShape.map((p) => toCanvas(p));
-          morphTgt = orderByAngle(samplePolys([tuCanvas], H)); // one target per source dot
-          // The thumbs-up perimeter is SHORTER than the hand's → keep only enough dots for
-          // matching spacing and FADE the rest out during the fly-out (no clumping).
-          const perim = (poly) => { let s = 0; for (let i = 0; i < poly.length; i++) { const a = poly[i], b = poly[(i + 1) % poly.length]; s += Math.hypot(b[0] - a[0], b[1] - a[1]); } return s; };
-          let pHand = perim(bodyPolys[1]);
-          for (const job of fingerJobs) pHand += perim(job.poly);
-          const step = Math.max(1, Math.round(pHand / Math.max(perim(tuCanvas), 1))); // keep every step-th
-          morphFade = morphSrc.map((_, i) => i % step !== 0); // true = excess dot → fades out
+          // TARGET = the EXACT Google thumbs-up emoji (outline + internal finger lines),
+          // its extracted points mapped into the hand's local frame. ROTATE so the emoji's
+          // wrist/cuff faces the forearm (which enters from the left), and anchor the wrist
+          // at the forearm tip so it reads as one continuous arm → thumbs-up. Tune here.
+          const EMOJI_S = 0.95, EMOJI_ROT = -0.24; // scale + slight clockwise tilt (radians, y-up)
+          const EMOJI_OX = 0.2, EMOJI_OY = 0.17; // anchor: the emoji wrist sits at the forearm tip
+          const pvx = 0.12, pvy = 0.14; // pivot ≈ the emoji's wrist (rotate about it)
+          const cR = Math.cos(EMOJI_ROT), sR = Math.sin(EMOJI_ROT);
+          const E = EMOJI_THUMB.length;
+          const eOrd = orderByAngle(EMOJI_THUMB.map((p) => {
+            const dx = p[0] - pvx, dy = p[1] - pvy;
+            return toCanvas([EMOJI_OX + (dx * cR - dy * sR) * EMOJI_S, EMOJI_OY + (dx * sR + dy * cR) * EMOJI_S]);
+          }));
+          // each source dot → the emoji point at the matching angular rank
+          morphTgt = morphSrc.map((_, i) => eOrd[Math.min(E - 1, Math.floor((i * E) / H))]);
+          // H hand dots > E emoji points → keep one dot per emoji point (the first to land
+          // there) and FADE the duplicates out at the apex, so spacing stays even.
+          morphFade = morphSrc.map((_, i) => i > 0 && Math.floor((i * E) / H) === Math.floor(((i - 1) * E) / H));
         }
         // fade the hand FILL out as the dots leave it
         const fillA = clamp(1 - morph * 1.7, 0, 1);
