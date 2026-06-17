@@ -741,7 +741,7 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
         const tbL = rotW([FINGERS[0].mcp[0] + FINGER_OFFSET[0], FINGERS[0].mcp[1] + FINGER_OFFSET[1]], -HAND_DROOP);
         const pcx = cx + tbL[0] * unit, pcy = wristY - tbL[1] * unit;
         bgCtx.translate(pcx, pcy);
-        bgCtx.rotate(0.2); // + = clockwise (canvas y points down); tune this angle
+        bgCtx.rotate(0.2 - 5 * DEG); // + = clockwise (canvas y points down); −5° = 5° CCW
         bgCtx.translate(-pcx, -pcy);
         for (let k = 0; k < nWhite; k++) {
           const x = kbLeft + k * wKeyW;
