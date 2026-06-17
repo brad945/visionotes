@@ -853,10 +853,18 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
       // Dot morph: on a successful send (vn-email-sent), the HAND (palm + fingers) dots
       // fly into a static THUMBS-UP (fist + thumb) and back. The FOREARM stays normal.
       // (`morph` was computed earlier so the keyboard could fade with it.)
-      // 1) FOREARM — always drawn normally (forearm = bodyPolys[0]; palm = bodyPolys[1]).
-      ctx.fillStyle = fill;
-      pathPoly(ctx, bodyPolys[0]);
-      ctx.fill();
+      // 1) FOREARM (forearm = bodyPolys[0]; palm = bodyPolys[1]). Its FILL fades out during
+      //    the morph (same as the hand fill) so the whole thing becomes ONE dotted arm →
+      //    thumbs-up — no solid grey cap jutting against the dotted hand. The dotted
+      //    forearm outline stays, so the arm still reads.
+      const armFillA = inMorphSeq ? clamp(1 - morph * 1.7, 0, 1) : 1;
+      if (armFillA > 0.01) {
+        ctx.globalAlpha = MODEL_ALPHA * armFillA;
+        ctx.fillStyle = fill;
+        pathPoly(ctx, bodyPolys[0]);
+        ctx.fill();
+        ctx.globalAlpha = MODEL_ALPHA;
+      }
       ctx.fillStyle = dot;
       outline(ctx, bodyPolys[0], [bodyPolys[1]], 11.3);
 
@@ -873,19 +881,32 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
           }
           morphSrc = orderByAngle(src);
           const H = morphSrc.length;
-          // TARGET = the EXACT Google thumbs-up emoji (outline + internal finger lines),
-          // its extracted points mapped into the hand's local frame. ROTATE so the emoji's
-          // wrist/cuff faces the forearm (which enters from the left), and anchor the wrist
-          // at the forearm tip so it reads as one continuous arm → thumbs-up. Tune here.
+          // TARGET = the EXACT Google thumbs-up emoji (outline + internal finger lines).
+          // Rotate/scale it, then AUTO-ANCHOR: slide the whole emoji so its wrist (its
+          // extreme point toward the elbow) OVERLAPS the forearm tip — guaranteed contact,
+          // no gap, regardless of pose. (No hand-tuned offsets to drift.)
           const EMOJI_S = 0.95, EMOJI_ROT = -0.24; // scale + slight clockwise tilt (radians, y-up)
-          const EMOJI_OX = 0.21, EMOJI_OY = 0.2; // anchor: emoji HEEL overlaps the forearm tip a touch
-          const pvx = 0.12, pvy = 0.14; // pivot ≈ the emoji's wrist (rotate about it)
+          const pvx = 0.12, pvy = 0.14; // pivot the rotation about the emoji's wrist
           const cR = Math.cos(EMOJI_ROT), sR = Math.sin(EMOJI_ROT);
           const E = EMOJI_THUMB.length;
-          const eOrd = orderByAngle(EMOJI_THUMB.map((p) => {
+          let eCanvas = EMOJI_THUMB.map((p) => {
             const dx = p[0] - pvx, dy = p[1] - pvy;
-            return toCanvas([EMOJI_OX + (dx * cR - dy * sR) * EMOJI_S, EMOJI_OY + (dx * sR + dy * cR) * EMOJI_S]);
-          }));
+            return toCanvas([(dx * cR - dy * sR) * EMOJI_S, (dx * sR + dy * cR) * EMOJI_S]);
+          });
+          // forearm tip + direction toward the elbow (canvas space)
+          const fl = Math.hypot(WRIST[0] - FOREARM_END[0], WRIST[1] - FOREARM_END[1]) || 1;
+          const ftL = [WRIST[0] + ((WRIST[0] - FOREARM_END[0]) / fl) * 0.2, WRIST[1] + ((WRIST[1] - FOREARM_END[1]) / fl) * 0.2];
+          const armTip = toCanvas(rotW(ftL, ARM_RAISE));
+          const elbowC = toCanvas(rotW(FOREARM_END, ARM_RAISE));
+          const al = Math.hypot(elbowC[0] - armTip[0], elbowC[1] - armTip[1]) || 1;
+          const aux = (elbowC[0] - armTip[0]) / al, auy = (elbowC[1] - armTip[1]) / al; // unit → elbow
+          // the emoji's wrist = its point with max projection toward the elbow
+          let wp = eCanvas[0], wpProj = -Infinity;
+          for (const p of eCanvas) { const pr = (p[0] - armTip[0]) * aux + (p[1] - armTip[1]) * auy; if (pr > wpProj) { wpProj = pr; wp = p; } }
+          const ov = 0.14 * unit; // bury the wrist this far into the forearm tip
+          const sx = armTip[0] + aux * ov - wp[0], sy = armTip[1] + auy * ov - wp[1];
+          eCanvas = eCanvas.map((p) => [p[0] + sx, p[1] + sy]);
+          const eOrd = orderByAngle(eCanvas);
           // each source dot → the emoji point at the matching angular rank
           morphTgt = morphSrc.map((_, i) => eOrd[Math.min(E - 1, Math.floor((i * E) / H))]);
           // H hand dots > E emoji points → keep one dot per emoji point (the first to land
