@@ -67,9 +67,8 @@ const rotW = (p, ang) => {
 // "Good zone": the cursor is right of the thumb knuckle. Left of it (over the
 // wrist/forearm or behind the hand) the fingers smoothly relax to rest instead
 // of whipping around an ill-defined aim direction.
-const FRONT_LO = 0.54; // cursor AT or LEFT of here (right of the thumb knuckle) → fully
-//                        idle: hand ignores the cursor and rests with idle breathing.
-const FRONT_HI = 0.72; // cursor well right of here → fully engaged (tracks the cursor)
+const FRONT_X = 0.6; // HARD threshold: cursor LEFT of here → instantly switch to the idle
+//                      piano (no blend zone); right of here → track the cursor.
 const IDLE_AFTER_MS = 2000; // cursor sitting still this long → relax to the rest pose too
 const IDLE_FADE_MS = 700; // ease into that idle over this window (no snap)
 const CLICK_MS = 220; // duration of the index "press" tap when the Send-link button is clicked
@@ -456,7 +455,9 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
       // cursor is. 0 when it's over the wrist/forearm or behind → fingers relax.
       // Idle when the cursor is too far left OR hasn't moved for IDLE_AFTER_MS.
       const idleActive = 1 - smoothstep(IDLE_AFTER_MS, IDLE_AFTER_MS + IDLE_FADE_MS, now - lastMove);
-      const front = lc ? smoothstep(FRONT_LO, FRONT_HI, lc[0]) * idleActive : 0;
+      // HARD spatial gate (not a smoothstep blend): crossing FRONT_X flips tracking ↔ piano
+      // instantly. The pose still eases to the new target, but there's no half-state zone.
+      const front = lc ? (lc[0] > FRONT_X ? 1 : 0) * idleActive : 0;
 
       // Dot-morph sequence for the thumbs-up: PAUSE (hand frozen as dots) → RISE (fly to
       // thumbs-up) → HOLD → FALL (fly back) → PAUSE (frozen) → resume. The pauses make it
