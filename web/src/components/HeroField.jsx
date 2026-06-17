@@ -990,6 +990,9 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
       sentT = performance.now();
       morphSrc = null; // re-snapshot the hand dots on the trigger frame
     }
+    function onKeyDown(e) {
+      if (e.key === "g") onSent();
+    } // TEMP: press "g" to preview the thumbs-up morph
 
     setup();
     rafId = requestAnimationFrame(draw);
@@ -997,6 +1000,7 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
     if (followCursor) window.addEventListener("mousedown", onMouseDown, { passive: true });
     window.addEventListener("resize", onResize);
     window.addEventListener("vn-email-sent", onSent);
+    window.addEventListener("keydown", onKeyDown); // TEMP
 
     return () => {
       cancelAnimationFrame(rafId);
@@ -1005,6 +1009,7 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
       if (followCursor) window.removeEventListener("mousedown", onMouseDown);
       window.removeEventListener("resize", onResize);
       window.removeEventListener("vn-email-sent", onSent);
+      window.removeEventListener("keydown", onKeyDown); // TEMP
     };
   }, [scale, followCursor]);
 
