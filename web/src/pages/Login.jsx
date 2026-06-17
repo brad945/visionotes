@@ -22,8 +22,6 @@ export default function Login({ splash = false }) {
     if (authError) {
       setError(authError.message);
     } else {
-      // tell the hero hand to throw a thumbs-up (it listens on window)
-      window.dispatchEvent(new CustomEvent("vn-email-sent"));
       setSubmitted(true);
     }
   };
