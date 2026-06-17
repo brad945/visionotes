@@ -689,20 +689,25 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
       // sync with the finger press.
       if (pianoGate > 0.02) {
         const tips = fingerJobs.map((job, idx) => ({ x: job.tip[0], y: job.tip[1], s: pianoFlexArr[order[idx]] * pianoGate }));
-        // Keyboard SIZE/POSITION is anchored to the REST tips (no strike curl, no press)
-        // with the model's run/dip offsets removed → it stays a fixed size and place while
-        // the fingers play. The live `tips` above are still used only to sink struck keys.
+        // Keyboard SIZE/POSITION is computed from the CONSTANT rest pose (fixed angles, base
+        // hand rotation, NO breathing / wrist-hinge / run / dip), so it NEVER changes size or
+        // place — the hand just plays over a fixed keyboard. (Live `tips` only sink struck keys.)
         let nMin = Infinity, nMax = -Infinity, sumY = 0;
-        for (const job of fingerJobs) {
-          const nx = job.restTip[0] - pianoX; // drop the lateral run → a FIXED keyboard
-          nMin = Math.min(nMin, nx);
-          nMax = Math.max(nMax, nx);
-          sumY += job.restTip[1] - pianoY; // drop the wrist dip → no vertical bob
+        for (let kf = 0; kf < FINGERS.length; kf++) {
+          const kfg = FINGERS[kf];
+          const ko = [kfg.mcp[0] + FINGER_OFFSET[0], kfg.mcp[1] + FINGER_OFFSET[1]];
+          const kj = fingerJoints(ko, kfg.rest, kfg.restCurl, kfg.seg, kfg.prof);
+          const kt = rotW(kj[kj.length - 1], -HAND_DROOP); // fixed base rotation, no live hinge
+          const kx = cx + kt[0] * unit; // base model position — no lunge/piano offsets
+          const ky = wristY - kt[1] * unit;
+          nMin = Math.min(nMin, kx);
+          nMax = Math.max(nMax, kx);
+          sumY += ky;
         }
         const margin = 0.22 * unit + 2 * PIANO_SHIFT;
         const kbLeft = nMin - margin;
         const kbW = nMax - nMin + 2 * margin;
-        const nearY = sumY / tips.length + 0.02 * unit; // front (near) edge — where the fingers press
+        const nearY = sumY / FINGERS.length + 0.02 * unit; // front (near) edge — where the fingers press
         const faceH = 0.05 * unit; // short front faces (low side angle)
         const nWhite = Math.max(7, Math.round(kbW / (0.115 * unit)));
         const wKeyW = kbW / nWhite;
@@ -717,10 +722,11 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
         // OPAQUE keys (only the fade-in uses alpha): otherwise the page background
         // bleeds through and, on the dark theme, blackens the pressed front faces.
         bgCtx.globalAlpha = pianoGate;
-        // rotate the keyboard CLOCKWISE around the BASE OF THE THUMB (its MCP joint).
-        // fingerJobs are in draw order [4,3,2,1,0] → the thumb is the last one.
-        const thumbBase = fingerJobs[fingerJobs.length - 1].joints[0];
-        const pcx = thumbBase[0], pcy = thumbBase[1];
+        // rotate the keyboard CLOCKWISE around the (FIXED) base of the thumb. Use the
+        // CONSTANT rest-pose thumb MCP so the pivot never moves → the whole keyboard is
+        // stable in size AND place (not tied to the live, breathing thumb).
+        const tbL = rotW([FINGERS[0].mcp[0] + FINGER_OFFSET[0], FINGERS[0].mcp[1] + FINGER_OFFSET[1]], -HAND_DROOP);
+        const pcx = cx + tbL[0] * unit, pcy = wristY - tbL[1] * unit;
         bgCtx.translate(pcx, pcy);
         bgCtx.rotate(0.2); // + = clockwise (canvas y points down); tune this angle
         bgCtx.translate(-pcx, -pcy);
