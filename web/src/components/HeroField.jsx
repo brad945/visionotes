@@ -747,7 +747,9 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
           const x = kbLeft + k * wKeyW;
           const x2 = x + wKeyW;
           let press = 0;
-          for (const tp of tips) if (tp.x >= x && tp.x < x2 && tp.s > press) press = tp.s;
+          // MIRROR the notes: hit-test the fingertip x reflected about the keyboard's own
+          // centre, so a strike lights the mirror-image key. Drawing is unchanged.
+          for (const tp of tips) { const mx = 2 * kbLeft + kbW - tp.x; if (mx >= x && mx < x2 && tp.s > press) press = tp.s; }
           const dy = press * 0.05 * unit; // pressed key tilts DOWN at the front (pivots at the back)
           const fl = far(x), fr = far(x2);
           // key TOP — near (front) edge tilts down on press; far edge fixed
