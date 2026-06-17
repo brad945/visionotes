@@ -103,9 +103,10 @@ const PIANO_PHRASE_BEATS = 25.2; // loop length in beats (~2× longer)
 const PIANO_BPS = 3.4; // beats per second (tempo) — 4× the original 0.85
 const PIANO_CURL = 7 * DEG; // per-knuckle flex at a key strike
 const PIANO_SHIFT = 13; // px the hand drifts laterally per finger-step (arm follows the run)
-const PIANO_DROP = 6; // px the wrist dips on a strike (arm weight into the key)
+const PIANO_DROP = 0; // 0 = the whole hand does NOT translate down on strikes (kept the
+//                       finger-press curl + lateral drift; this dip made the hand sink)
 const WRIST_SWAY = 3 * DEG; // gentle continuous wrist undulation while playing
-const WRIST_FLEX = 5 * DEG; // the wrist HINGES down (flexes) on each strike (weight)
+const WRIST_FLEX = 2 * DEG; // subtle wrist flex on a strike (was 5° — that pulled the hand down)
 // derive: per-finger sorted strike times + each event's lateral position (avg finger − 2).
 const PIANO_STRIKES = [[], [], [], [], []];
 for (const ev of PIANO_PHRASE) {
