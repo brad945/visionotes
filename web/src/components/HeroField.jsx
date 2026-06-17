@@ -724,10 +724,15 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
         const faceH = 0.05 * unit; // short front faces (low side angle)
         const nWhite = Math.max(7, Math.round(kbW / (0.115 * unit)));
         const wKeyW = kbW / nWhite;
+        // EXTEND: extra white keys added to the LEFT and RIGHT. The VP / perspective / wKeyW
+        // below are ALL from the ORIGINAL keyboard and left UNCHANGED — we just draw more key
+        // slots (k from -EXT_L .. nWhite+EXT_R) with that same fixed mapping, so the original
+        // keys stay pixel-identical and the new ones are exact copies.
+        const EXT_L = 6, EXT_R = 12;
         // SIDE VIEW (like watching a pianist from the side): the keyboard recedes off
         // into the distance to the RIGHT, so the vanishing point is far to the right and
         // only slightly up — the keys angle sideways rather than facing forward.
-        const vpX = kbLeft + kbW * 2.1;
+        const vpX = kbLeft + kbW * 2.5;
         const vpY = nearY - 0.45 * unit;
         const recede = 0.55; // how far the key backs travel toward the VP
         const far = (x) => [x + (vpX - x) * recede, nearY + (vpY - nearY) * recede];
@@ -743,7 +748,7 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
         bgCtx.translate(pcx, pcy);
         bgCtx.rotate(0.2 - 5 * DEG); // + = clockwise (canvas y points down); −5° = 5° CCW
         bgCtx.translate(-pcx, -pcy);
-        for (let k = 0; k < nWhite; k++) {
+        for (let k = -EXT_L; k < nWhite + EXT_R; k++) {
           const x = kbLeft + k * wKeyW;
           const x2 = x + wKeyW;
           let press = 0;
@@ -779,8 +784,8 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
         const bkW = wKeyW * 0.56;
         bgCtx.fillStyle = "rgb(16,19,25)";
         bgCtx.strokeStyle = "rgba(0,0,0,0.7)";
-        for (let k = 0; k < nWhite - 1; k++) {
-          if (![0, 1, 3, 4, 5].includes(k % 7)) continue;
+        for (let k = -EXT_L; k < nWhite - 1 + EXT_R; k++) {
+          if (![0, 1, 3, 4, 5].includes(((k % 7) + 7) % 7)) continue; // +mod handles k<0
           const bx = kbLeft + (k + 1) * wKeyW - bkW / 2;
           const bx2 = bx + bkW;
           // near edge set back along the recede (start ~12%), far ~60% — shorter than whites
