@@ -311,7 +311,8 @@ const KB_DEFAULTS = {
   posX: 800, posY: -122,   // screen-px offset of the whole keyboard
   scale: 3,           // size multiplier about the (fixed) pivot
   tiltDeg: -1,         // 2D screen tilt, DELTA from the baseline (0.2 − 9°)
-  yawDeg: -51,        // top-down 3D yaw about the left edge (− = clockwise)
+  yawDeg: -47,        // top-down 3D yaw; past ~−48° the keys go end-on and read as flat
+  //                     ribbons, so −47 keeps them as solid 3D blocks (− = clockwise)
   depth: 0.65,        // yaw depth/sensitivity (larger = gentler swing)
   extL: 6, extR: 4, // extra key slots added left / right
   recede: 0.42,       // how far the key-backs travel toward the vanishing point
