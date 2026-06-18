@@ -301,19 +301,20 @@ function chordShape(seg, curl, prof) {
 // --- DEV-only piano keyboard tuning panel ---------------------------------
 // Live knobs for the keyboard's position / rotation / size / perspective. The
 // draw loop reads these (via a ref) every frame, so dragging a slider updates
-// the keyboard in real time without restarting the RAF. Defaults reproduce the
-// current look EXACTLY: tiltDeg is a DELTA on top of the baseline screen tilt
-// (so 0 = byte-identical to production), every other default is the literal the
-// code already uses. The panel only renders under import.meta.env.DEV — it never
-// ships. Dial it in, read off the values, then bake them into the geometry.
+// the keyboard in real time without restarting the RAF. These DEFAULTS are the
+// dialed-in production look (big, swung forward as a close-up — the front edge
+// runs off the bottom on purpose). tiltDeg is a DELTA on top of the baseline
+// screen tilt (0.2 − 9°), so 0 leaves that baseline untouched. The panel only
+// renders under import.meta.env.DEV — it never ships; the defaults below are
+// what production shows. Keep tweaking via the panel; tell me to re-bake.
 const KB_DEFAULTS = {
-  posX: 0, posY: 0,   // screen-px offset of the whole keyboard
-  scale: 1,           // size multiplier about the (fixed) pivot
-  tiltDeg: 0,         // 2D screen tilt, DELTA from the baseline (0.2 − 9°)
-  yawDeg: -10,        // top-down 3D yaw about the left edge (− = clockwise)
-  depth: 0.35,        // yaw depth/sensitivity (larger = gentler swing)
-  extL: 12, extR: 12, // extra key slots added left / right
-  recede: 0.55,       // how far the key-backs travel toward the vanishing point
+  posX: 400, posY: -68,   // screen-px offset of the whole keyboard
+  scale: 1.94,           // size multiplier about the (fixed) pivot
+  tiltDeg: -0.3,         // 2D screen tilt, DELTA from the baseline (0.2 − 9°)
+  yawDeg: -29,        // top-down 3D yaw about the left edge (− = clockwise)
+  depth: 0.65,        // yaw depth/sensitivity (larger = gentler swing)
+  extL: 9, extR: 12, // extra key slots added left / right
+  recede: 0.42,       // how far the key-backs travel toward the vanishing point
   vpXf: 2.5,          // vanishing-point X factor (horizontal convergence)
   vpYf: 0.45,         // vanishing-point Y factor (tilt into the distance)
 };
@@ -837,7 +838,10 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
           const Xw = u, Zw = v * KB_DEPTH;
           const ur = Xw * yc - Zw * ys; // rotate in the metric ground plane about (0,0)=left-front corner
           const vr = (Xw * ys + Zw * yc) / KB_DEPTH; // renormalize depth back to homography v-units
-          return applyH(kbH, ur, clamp(vr, -0.55, 1.7)); // clamp shy of the projective horizon (~1.82)
+          // Only the FAR side (large +v) has a projective horizon (~1.82) to stay shy of; the NEAR
+          // side (−v, in front of the keyboard) has none, so allow it to run well forward — strong
+          // yaw pulls the near corner toward the viewer and a tight floor would slice it flat.
+          return applyH(kbH, ur, clamp(vr, -3, 1.7));
         };
         const proj = (X, w) => projUV((X - pivotXk) / Uspan, w); // by near-edge X (drop-in)
         bgCtx.save();
