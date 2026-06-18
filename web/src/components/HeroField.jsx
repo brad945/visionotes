@@ -308,19 +308,19 @@ function chordShape(seg, curl, prof) {
 // renders under import.meta.env.DEV — it never ships; the defaults below are
 // what production shows. Keep tweaking via the panel; tell me to re-bake.
 const KB_DEFAULTS = {
-  posX: 400, posY: -68,   // screen-px offset of the whole keyboard
+  posX: 400, posY: -79,   // screen-px offset of the whole keyboard
   scale: 1.94,           // size multiplier about the (fixed) pivot
-  tiltDeg: -0.3,         // 2D screen tilt, DELTA from the baseline (0.2 − 9°)
-  yawDeg: -29,        // top-down 3D yaw about the left edge (− = clockwise)
+  tiltDeg: -1,         // 2D screen tilt, DELTA from the baseline (0.2 − 9°)
+  yawDeg: -28.5,        // top-down 3D yaw about the left edge (− = clockwise)
   depth: 0.65,        // yaw depth/sensitivity (larger = gentler swing)
-  extL: 9, extR: 12, // extra key slots added left / right
+  extL: 6, extR: 4, // extra key slots added left / right
   recede: 0.42,       // how far the key-backs travel toward the vanishing point
   vpXf: 2.5,          // vanishing-point X factor (horizontal convergence)
-  vpYf: 0.45,         // vanishing-point Y factor (tilt into the distance)
+  vpYf: 0.3,          // vanishing-point Y factor (tilt into the distance)
 };
 // [key, label, min, max, step]
 const KB_CONTROLS = [
-  ["posX", "pos X", -400, 400, 1],
+  ["posX", "pos X", -800, 800, 1],
   ["posY", "pos Y", -400, 400, 1],
   ["scale", "scale", 0.3, 3, 0.01],
   ["tiltDeg", "tilt Δ°", -45, 45, 0.1],
