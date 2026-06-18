@@ -114,11 +114,13 @@ for (const ev of PIANO_PHRASE) {
   for (const fi of ev.f) PIANO_STRIKES[fi].push(ev.t);
 }
 PIANO_STRIKES.forEach((a) => a.sort((x, y) => x - y));
-// triangle strike envelope: fast attack, slower release (a key press → lift). dt seconds.
+// strike envelope: fast attack, brief hold at full, then a slow release so the key-press
+// (light + sink) LINGERS and reads clearly instead of a sub-100ms blink. dt in beats.
 const pianoEnv = (dt) => {
   if (dt < 0) return 0;
-  if (dt < 0.04) return dt / 0.04;
-  if (dt < 0.28) return 1 - (dt - 0.04) / 0.24;
+  if (dt < 0.04) return dt / 0.04;        // fast attack
+  if (dt < 0.16) return 1;                // brief hold at full press
+  if (dt < 0.62) return 1 - (dt - 0.16) / 0.46; // slow release (key lifts)
   return 0;
 };
 // strike amount (0–1) for finger i at the given phrase time (beats), with wrap-around.
@@ -898,7 +900,7 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
           // MIRROR the notes: hit-test the fingertip x reflected about the keyboard's own
           // centre, so a strike lights the mirror-image key. Drawing is unchanged.
           for (const tp of tips) { const mx = 2 * kbLeft + kbW - tp.x; if (mx >= x && mx < x2 && tp.s > press) press = tp.s; }
-          const dy = press * 0.05 * unit; // pressed key tilts DOWN at the front (pivots at the back)
+          const dy = press * 0.14 * unit; // pressed key tilts DOWN at the front (pivots at the back)
           const nl = proj(x, 0), nr = proj(x2, 0); // near (front) edge — yawed
           const fl = proj(x, 1), fr = proj(x2, 1); // far (back) edge — yawed
           const A = [nl[0], nl[1] + dy], B = [nr[0], nr[1] + dy]; // top corners: near sinks on press
@@ -910,13 +912,13 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
           //     WHITE as the top (no dark side-wall "depth wedge"), NO stroke. Its only job now is to
           //     fill the inter-key gaps so there's no see-through — the key reads as one solid flat
           //     white surface, not a 3D box.
-          bgCtx.fillStyle = pressed ? "rgb(150,196,216)" : "rgb(240,244,249)";
+          bgCtx.fillStyle = pressed ? "rgb(72,196,230)" : "rgb(240,244,249)";
           fillHull(convexHull([A, B, C, D, Ad, Bd, Cd, Dd]));
           // (b) TOP CAP — the white key top + the per-key seam stroke (the only lines kept). The
           //     white body already fills the front/side area, so there is NO grey "depth wedge" lip
           //     and no diagonal triangle border — each key reads as one solid flat white surface,
           //     separated from its neighbours only by the thin seam.
-          bgCtx.fillStyle = pressed ? "rgb(150,196,216)" : "rgb(240,244,249)";
+          bgCtx.fillStyle = pressed ? "rgb(72,196,230)" : "rgb(240,244,249)";
           bgCtx.strokeStyle = "rgba(10,14,20,0.5)";
           bgCtx.lineWidth = 1;
           bgCtx.beginPath();
