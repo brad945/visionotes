@@ -311,8 +311,7 @@ const KB_DEFAULTS = {
   posX: 800, posY: -122,   // screen-px offset of the whole keyboard
   scale: 3,           // size multiplier about the (fixed) pivot
   tiltDeg: -1,         // 2D screen tilt, DELTA from the baseline (0.2 − 9°)
-  yawDeg: -47,        // top-down 3D yaw; past ~−48° the keys go end-on and read as flat
-  //                     ribbons, so −47 keeps them as solid 3D blocks (− = clockwise)
+  yawDeg: -51,        // top-down 3D yaw about the left edge (− = clockwise)
   depth: 0.65,        // yaw depth/sensitivity (larger = gentler swing)
   extL: 6, extR: 4, // extra key slots added left / right
   recede: 0.42,       // how far the key-backs travel toward the vanishing point
@@ -865,6 +864,33 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
         bgCtx.rotate(0.2 - 9 * DEG + k.tiltDeg * DEG); // baseline tilt (+ = CW) plus the panel delta
         bgCtx.scale(k.scale, k.scale);
         bgCtx.translate(-pcx, -pcy);
+        // Each key is drawn as a SOLID extruded block = body (silhouette) + top cap + front lip.
+        // The body is the convex hull of the 8 box corners (4 top + 4 dropped straight down by
+        // faceH). Because adjacent keys share their boundary corners exactly, neighbouring bodies
+        // overlap on every shared edge → NO see-through gaps at ANY yaw (the fix for the "ribbon"
+        // look at steep yaw). The body carries NO stroke (a body stroke would redraw the dark seam
+        // and re-open the gaps); only the cap + lip are stroked. At yaw 0 the side walls are edge-on
+        // so this degrades to today's top-quad + front-lip look.
+        const H_DOWN = [0, faceH]; // constant screen-down extrusion (keeps the height unchanged)
+        const cross2 = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+        const convexHull = (pts) => {
+          const p = pts.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+          if (p.length < 3) return p;
+          const lo = [];
+          for (const q of p) { while (lo.length >= 2 && cross2(lo[lo.length - 2], lo[lo.length - 1], q) <= 0) lo.pop(); lo.push(q); }
+          const hi = [];
+          for (let i = p.length - 1; i >= 0; i--) { const q = p[i]; while (hi.length >= 2 && cross2(hi[hi.length - 2], hi[hi.length - 1], q) <= 0) hi.pop(); hi.push(q); }
+          lo.pop(); hi.pop();
+          return lo.concat(hi);
+        };
+        const fillHull = (poly) => {
+          if (poly.length < 2) return;
+          bgCtx.beginPath();
+          bgCtx.moveTo(poly[0][0], poly[0][1]);
+          for (let i = 1; i < poly.length; i++) bgCtx.lineTo(poly[i][0], poly[i][1]);
+          bgCtx.closePath();
+          bgCtx.fill();
+        };
         for (let k = -EXT_L; k < nWhite + EXT_R; k++) {
           const x = kbLeft + k * wKeyW;
           const x2 = x + wKeyW;
@@ -875,47 +901,50 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
           const dy = press * 0.05 * unit; // pressed key tilts DOWN at the front (pivots at the back)
           const nl = proj(x, 0), nr = proj(x2, 0); // near (front) edge — yawed
           const fl = proj(x, 1), fr = proj(x2, 1); // far (back) edge — yawed
-          // key TOP — near (front) edge tilts down on press; far edge fixed
-          bgCtx.fillStyle = press > 0.06 ? "rgb(150,196,216)" : "rgb(240,244,249)";
+          const A = [nl[0], nl[1] + dy], B = [nr[0], nr[1] + dy]; // top corners: near sinks on press
+          const C = [fr[0], fr[1]], D = [fl[0], fl[1]];           // far edge fixed
+          const Ad = [A[0], A[1] + faceH], Bd = [B[0], B[1] + faceH]; // straight-down extrusions
+          const Cd = [C[0], C[1] + faceH], Dd = [D[0], D[1] + faceH];
+          const pressed = press > 0.06;
+          // (a) BODY — silhouette hull of all 8 corners, side colour = front colour, NO stroke
+          //     (a body stroke would redraw the seam and re-open the gaps). Fills the inter-key gaps.
+          bgCtx.fillStyle = pressed ? "rgb(112,150,170)" : "rgb(198,205,214)";
+          fillHull(convexHull([A, B, C, D, Ad, Bd, Cd, Dd]));
+          // (b) TOP CAP — today's exact top quad + the per-key seam stroke
+          bgCtx.fillStyle = pressed ? "rgb(150,196,216)" : "rgb(240,244,249)";
           bgCtx.strokeStyle = "rgba(10,14,20,0.5)";
           bgCtx.lineWidth = 1;
           bgCtx.beginPath();
-          bgCtx.moveTo(nl[0], nl[1] + dy);
-          bgCtx.lineTo(nr[0], nr[1] + dy);
-          bgCtx.lineTo(fr[0], fr[1]);
-          bgCtx.lineTo(fl[0], fl[1]);
-          bgCtx.closePath();
-          bgCtx.fill();
-          bgCtx.stroke();
-          // tall FRONT face (faces the viewer)
-          bgCtx.fillStyle = press > 0.06 ? "rgb(112,150,170)" : "rgb(198,205,214)";
+          bgCtx.moveTo(A[0], A[1]); bgCtx.lineTo(B[0], B[1]); bgCtx.lineTo(C[0], C[1]); bgCtx.lineTo(D[0], D[1]);
+          bgCtx.closePath(); bgCtx.fill(); bgCtx.stroke();
+          // (c) FRONT LIP — today's exact front face (the only wall visible at yaw 0)
+          bgCtx.fillStyle = pressed ? "rgb(112,150,170)" : "rgb(198,205,214)";
           bgCtx.beginPath();
-          bgCtx.moveTo(nl[0], nl[1] + dy);
-          bgCtx.lineTo(nr[0], nr[1] + dy);
-          bgCtx.lineTo(nr[0], nr[1] + faceH + dy);
-          bgCtx.lineTo(nl[0], nl[1] + faceH + dy);
-          bgCtx.closePath();
-          bgCtx.fill();
-          bgCtx.stroke();
+          bgCtx.moveTo(A[0], A[1]); bgCtx.lineTo(B[0], B[1]); bgCtx.lineTo(Bd[0], Bd[1]); bgCtx.lineTo(Ad[0], Ad[1]);
+          bgCtx.closePath(); bgCtx.fill(); bgCtx.stroke();
         }
-        // black keys: raised, set back, receding to the same VP (after white k%7∈{0,1,3,4,5})
+        // black keys: small CONSTANT extruded body so they don't vanish at steep yaw (subordinate)
         const bkW = wKeyW * 0.56;
-        bgCtx.fillStyle = "rgb(16,19,25)";
+        const BK_DOWN = faceH * 0.6;
         bgCtx.strokeStyle = "rgba(0,0,0,0.7)";
+        bgCtx.lineWidth = 1;
         for (let k = -EXT_L; k < nWhite - 1 + EXT_R; k++) {
           if (![0, 1, 3, 4, 5].includes(((k % 7) + 7) % 7)) continue; // +mod handles k<0
           const bx = kbLeft + (k + 1) * wKeyW - bkW / 2;
           const bx2 = bx + bkW;
           // near edge set back along the recede (start ~12%), far ~60% — shorter than whites
           const n0 = proj(bx, 0.12), n1 = proj(bx2, 0.12), f0 = proj(bx, 0.6), f1 = proj(bx2, 0.6);
+          const bn0 = [n0[0], n0[1] + BK_DOWN], bn1 = [n1[0], n1[1] + BK_DOWN];
+          const bf0 = [f0[0], f0[1] + BK_DOWN], bf1 = [f1[0], f1[1] + BK_DOWN];
+          bgCtx.fillStyle = "rgb(8,10,14)"; // body, no stroke
+          fillHull(convexHull([n0, n1, f1, f0, bn0, bn1, bf1, bf0]));
+          bgCtx.fillStyle = "rgb(16,19,25)"; // top cap
           bgCtx.beginPath();
-          bgCtx.moveTo(n0[0], n0[1]);
-          bgCtx.lineTo(n1[0], n1[1]);
-          bgCtx.lineTo(f1[0], f1[1]);
-          bgCtx.lineTo(f0[0], f0[1]);
-          bgCtx.closePath();
-          bgCtx.fill();
-          bgCtx.stroke();
+          bgCtx.moveTo(n0[0], n0[1]); bgCtx.lineTo(n1[0], n1[1]); bgCtx.lineTo(f1[0], f1[1]); bgCtx.lineTo(f0[0], f0[1]);
+          bgCtx.closePath(); bgCtx.fill(); bgCtx.stroke();
+          bgCtx.beginPath(); // front lip
+          bgCtx.moveTo(n0[0], n0[1]); bgCtx.lineTo(n1[0], n1[1]); bgCtx.lineTo(bn1[0], bn1[1]); bgCtx.lineTo(bn0[0], bn0[1]);
+          bgCtx.closePath(); bgCtx.fill(); bgCtx.stroke();
         }
         bgCtx.restore();
       }
