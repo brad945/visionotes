@@ -1,4 +1,4 @@
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useState } from "react";
 import { useTheme } from "../theme/ThemeProvider";
 import "./HeroField.css";
 
@@ -161,6 +161,25 @@ const MAX_LIFT = 28 * DEG; // most the hand will hinge up
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const lerp = (a, b, t) => a + (b - a) * t;
+// Projective square→quad homography. Maps the unit square corners (0,0)(1,0)(1,1)(0,1)
+// to `corners` (4 screen pts) and returns the 3×3 matrix as [a,b,c, d,e,f, g,h,i].
+// Used to draw the piano keyboard as a TRUE perspective plane (so a top-down yaw stays
+// straight, unlike the old bilinear map which bowed edges into parabolas).
+const squareToQuad = (corners) => {
+  const [x0, y0] = corners[0], [x1, y1] = corners[1], [x2, y2] = corners[2], [x3, y3] = corners[3];
+  const dx1 = x1 - x2, dx2 = x3 - x2, dx3 = x0 - x1 + x2 - x3;
+  const dy1 = y1 - y2, dy2 = y3 - y2, dy3 = y0 - y1 + y2 - y3;
+  if (Math.abs(dx3) < 1e-9 && Math.abs(dy3) < 1e-9) return [x1 - x0, x3 - x0, x0, y1 - y0, y3 - y0, y0, 0, 0, 1];
+  const den = dx1 * dy2 - dx2 * dy1 || 1e-9;
+  const g = (dx3 * dy2 - dx2 * dy3) / den;
+  const h = (dx1 * dy3 - dx3 * dy1) / den;
+  return [x1 - x0 + g * x1, x3 - x0 + h * x3, x0, y1 - y0 + g * y1, y3 - y0 + h * y3, y0, g, h, 1];
+};
+const applyH = (H, u, v) => {
+  let w = H[6] * u + H[7] * v + H[8];
+  if (Math.abs(w) < 1e-4) w = w < 0 ? -1e-4 : 1e-4; // guard the projective divide (behind-camera)
+  return [(H[0] * u + H[1] * v + H[2]) / w, (H[3] * u + H[4] * v + H[5]) / w];
+};
 const smoothstep = (e0, e1, x) => {
   const t = clamp((x - e0) / (e1 - e0), 0, 1);
   return t * t * (3 - 2 * t);
@@ -279,6 +298,59 @@ function chordShape(seg, curl, prof) {
   return { alpha: Math.atan2(y, x), len: Math.hypot(x, y) };
 }
 
+// --- DEV-only piano keyboard tuning panel ---------------------------------
+// Live knobs for the keyboard's position / rotation / size / perspective. The
+// draw loop reads these (via a ref) every frame, so dragging a slider updates
+// the keyboard in real time without restarting the RAF. Defaults reproduce the
+// current look EXACTLY: tiltDeg is a DELTA on top of the baseline screen tilt
+// (so 0 = byte-identical to production), every other default is the literal the
+// code already uses. The panel only renders under import.meta.env.DEV — it never
+// ships. Dial it in, read off the values, then bake them into the geometry.
+const KB_DEFAULTS = {
+  posX: 0, posY: 0,   // screen-px offset of the whole keyboard
+  scale: 1,           // size multiplier about the (fixed) pivot
+  tiltDeg: 0,         // 2D screen tilt, DELTA from the baseline (0.2 − 9°)
+  yawDeg: -10,        // top-down 3D yaw about the left edge (− = clockwise)
+  depth: 0.35,        // yaw depth/sensitivity (larger = gentler swing)
+  extL: 12, extR: 12, // extra key slots added left / right
+  recede: 0.55,       // how far the key-backs travel toward the vanishing point
+  vpXf: 2.5,          // vanishing-point X factor (horizontal convergence)
+  vpYf: 0.45,         // vanishing-point Y factor (tilt into the distance)
+};
+// [key, label, min, max, step]
+const KB_CONTROLS = [
+  ["posX", "pos X", -400, 400, 1],
+  ["posY", "pos Y", -400, 400, 1],
+  ["scale", "scale", 0.3, 3, 0.01],
+  ["tiltDeg", "tilt Δ°", -45, 45, 0.1],
+  ["yawDeg", "yaw °", -45, 45, 0.5],
+  ["depth", "depth", 0.15, 1.5, 0.01],
+  ["extL", "ext L", 0, 40, 1],
+  ["extR", "ext R", 0, 40, 1],
+  ["recede", "recede", 0.1, 0.95, 0.01],
+  ["vpXf", "vp X", 0.8, 6, 0.1],
+  ["vpYf", "vp Y", 0, 2, 0.05],
+];
+const KB_PANEL = {
+  box: {
+    position: "fixed", top: 12, right: 12, zIndex: 50, width: 232,
+    background: "rgba(20,24,30,0.92)", color: "#e7edf5",
+    font: "12px/1.5 ui-monospace,monospace", padding: "10px 12px",
+    borderRadius: 8, pointerEvents: "auto", boxShadow: "0 6px 20px rgba(0,0,0,0.4)",
+  },
+  head: { fontWeight: 700, marginBottom: 6 },
+  row: { display: "block", marginBottom: 3 },
+  label: { display: "inline-block", width: 52 },
+  slider: { width: 104, verticalAlign: "middle", margin: "0 6px" },
+  val: { display: "inline-block", width: 40, textAlign: "right" },
+  btnRow: { display: "flex", gap: 6, marginTop: 8 },
+  btn: {
+    flex: 1, font: "11px ui-monospace,monospace", color: "#e7edf5",
+    background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.18)",
+    borderRadius: 5, padding: "4px 0", cursor: "pointer",
+  },
+};
+
 /**
  * Skeletal hand whose fingers articulate toward the cursor (procedural forward
  * kinematics with anatomical limits + idle breathing), rendered as a dot cloud.
@@ -291,6 +363,13 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
   useEffect(() => {
     themeRef.current = theme;
   }, [theme]);
+
+  // Live keyboard-tuning state. `kb` drives the (DEV-only) panel UI; `kbRef`
+  // mirrors it so the RAF draw loop can read current values every frame without
+  // the [scale, followCursor] effect re-running on a slider drag.
+  const [kb, setKb] = useState(KB_DEFAULTS);
+  const kbRef = useRef(kb);
+  useEffect(() => { kbRef.current = kb; }, [kb]);
 
   useEffect(() => {
     const bgCanvas = bgCanvasRef.current;
@@ -701,6 +780,7 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
       // moving along the keys) and the key under each striking fingertip sinks in
       // sync with the finger press.
       if (pianoGate > 0.02) {
+        const k = kbRef.current; // live tuning knobs (DEV panel); = KB_DEFAULTS in production
         const tips = fingerJobs.map((job, idx) => ({ x: job.tip[0], y: job.tip[1], s: pianoFlexArr[order[idx]] * pianoGate }));
         // Keyboard SIZE/POSITION is computed from the CONSTANT rest pose (fixed angles, base
         // hand rotation, NO breathing / wrist-hinge / run / dip), so it NEVER changes size or
@@ -728,14 +808,35 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
         // below are ALL from the ORIGINAL keyboard and left UNCHANGED — we just draw more key
         // slots (k from -EXT_L .. nWhite+EXT_R) with that same fixed mapping, so the original
         // keys stay pixel-identical and the new ones are exact copies.
-        const EXT_L = 12, EXT_R = 12;
+        const EXT_L = k.extL, EXT_R = k.extR;
         // SIDE VIEW (like watching a pianist from the side): the keyboard recedes off
         // into the distance to the RIGHT, so the vanishing point is far to the right and
         // only slightly up — the keys angle sideways rather than facing forward.
-        const vpX = kbLeft + kbW * 2.5;
-        const vpY = nearY - 0.45 * unit;
-        const recede = 0.55; // how far the key backs travel toward the VP
-        const far = (x) => [x + (vpX - x) * recede, nearY + (vpY - nearY) * recede];
+        const vpX = kbLeft + kbW * k.vpXf;
+        const vpY = nearY - k.vpYf * unit;
+        const recede = k.recede; // how far the key backs travel toward the VP
+        // TRUE-PERSPECTIVE keyboard: fit a projective homography H to TODAY'S four corners
+        // (so yaw=0 is pixel-identical along the white keys), and apply a TOP-DOWN YAW about
+        // the LEFT-FRONT corner as a metric in-plane rotation BEFORE H. homography ∘ rotation
+        // keeps every edge perfectly STRAIGHT (a real camera yaw), unlike the old bilinear
+        // map which bowed them. u = along-slab [0..1], v = key depth [0=front..1=back].
+        const pivotXk = kbLeft - EXT_L * wKeyW; // leftmost near-edge x (the yaw pivot)
+        const rightXk = kbLeft + (nWhite + EXT_R) * wKeyW; // right near-edge x
+        const Uspan = rightXk - pivotXk || 1;
+        const cur0 = (X, w) => [X + (vpX - X) * w * recede, nearY + (vpY - nearY) * w * recede]; // today's map
+        const kbH = squareToQuad([cur0(pivotXk, 0), cur0(rightXk, 0), cur0(rightXk, 1), cur0(pivotXk, 1)]);
+        const KB_DEPTH = k.depth; // yaw sensitivity; floor (0.15) keeps small-depth+high-yaw from
+        // saturating the vr clamp (vr = u·sinθ/depth + v·cosθ; depth cancels in the v-term, so this
+        // is clamp-saturation under yaw amplification, NOT a divide-by-zero — depth never divides v).
+        const KB_YAW = k.yawDeg * DEG; // top-down yaw about the LEFT edge; − = clockwise (chosen by eye)
+        const yc = Math.cos(KB_YAW), ys = Math.sin(KB_YAW);
+        const projUV = (u, v) => {
+          const Xw = u, Zw = v * KB_DEPTH;
+          const ur = Xw * yc - Zw * ys; // rotate in the metric ground plane about (0,0)=left-front corner
+          const vr = (Xw * ys + Zw * yc) / KB_DEPTH; // renormalize depth back to homography v-units
+          return applyH(kbH, ur, clamp(vr, -0.55, 1.7)); // clamp shy of the projective horizon (~1.82)
+        };
+        const proj = (X, w) => projUV((X - pivotXk) / Uspan, w); // by near-edge X (drop-in)
         bgCtx.save();
         // OPAQUE keys (only the fade-in uses alpha): otherwise the page background
         // bleeds through and, on the dark theme, blackens the pressed front faces.
@@ -745,8 +846,15 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
         // stable in size AND place (not tied to the live, breathing thumb).
         const tbL = rotW([FINGERS[0].mcp[0] + FINGER_OFFSET[0], FINGERS[0].mcp[1] + FINGER_OFFSET[1]], -HAND_DROOP);
         const pcx = cx + tbL[0] * unit, pcy = wristY - tbL[1] * unit;
+        // Position / tilt / scale as ONE rigid transform (canvas post-multiplies, so the LAST call
+        // is the FIRST transform a point sees): posX/posY is OUTERMOST → a pure screen-px offset,
+        // unaffected by tilt/scale. Tilt + uniform scale share the fixed pivot (pcx,pcy) so they
+        // commute and the keyboard never drifts. Yaw is NOT here — it lives inside proj() as the
+        // metric ground-plane rotation before the homography.
+        bgCtx.translate(k.posX, k.posY);
         bgCtx.translate(pcx, pcy);
-        bgCtx.rotate(0.2 - 5 * DEG); // + = clockwise (canvas y points down); −5° = 5° CCW
+        bgCtx.rotate(0.2 - 9 * DEG + k.tiltDeg * DEG); // baseline tilt (+ = CW) plus the panel delta
+        bgCtx.scale(k.scale, k.scale);
         bgCtx.translate(-pcx, -pcy);
         for (let k = -EXT_L; k < nWhite + EXT_R; k++) {
           const x = kbLeft + k * wKeyW;
@@ -756,14 +864,15 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
           // centre, so a strike lights the mirror-image key. Drawing is unchanged.
           for (const tp of tips) { const mx = 2 * kbLeft + kbW - tp.x; if (mx >= x && mx < x2 && tp.s > press) press = tp.s; }
           const dy = press * 0.05 * unit; // pressed key tilts DOWN at the front (pivots at the back)
-          const fl = far(x), fr = far(x2);
+          const nl = proj(x, 0), nr = proj(x2, 0); // near (front) edge — yawed
+          const fl = proj(x, 1), fr = proj(x2, 1); // far (back) edge — yawed
           // key TOP — near (front) edge tilts down on press; far edge fixed
           bgCtx.fillStyle = press > 0.06 ? "rgb(150,196,216)" : "rgb(240,244,249)";
           bgCtx.strokeStyle = "rgba(10,14,20,0.5)";
           bgCtx.lineWidth = 1;
           bgCtx.beginPath();
-          bgCtx.moveTo(x, nearY + dy);
-          bgCtx.lineTo(x2, nearY + dy);
+          bgCtx.moveTo(nl[0], nl[1] + dy);
+          bgCtx.lineTo(nr[0], nr[1] + dy);
           bgCtx.lineTo(fr[0], fr[1]);
           bgCtx.lineTo(fl[0], fl[1]);
           bgCtx.closePath();
@@ -772,10 +881,10 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
           // tall FRONT face (faces the viewer)
           bgCtx.fillStyle = press > 0.06 ? "rgb(112,150,170)" : "rgb(198,205,214)";
           bgCtx.beginPath();
-          bgCtx.moveTo(x, nearY + dy);
-          bgCtx.lineTo(x2, nearY + dy);
-          bgCtx.lineTo(x2, nearY + faceH + dy);
-          bgCtx.lineTo(x, nearY + faceH + dy);
+          bgCtx.moveTo(nl[0], nl[1] + dy);
+          bgCtx.lineTo(nr[0], nr[1] + dy);
+          bgCtx.lineTo(nr[0], nr[1] + faceH + dy);
+          bgCtx.lineTo(nl[0], nl[1] + faceH + dy);
           bgCtx.closePath();
           bgCtx.fill();
           bgCtx.stroke();
@@ -789,8 +898,7 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
           const bx = kbLeft + (k + 1) * wKeyW - bkW / 2;
           const bx2 = bx + bkW;
           // near edge set back along the recede (start ~12%), far ~60% — shorter than whites
-          const lerp2 = (x, fr2) => { const f = far(x); return [x + (f[0] - x) * fr2, nearY + (f[1] - nearY) * fr2]; };
-          const n0 = lerp2(bx, 0.12), n1 = lerp2(bx2, 0.12), f0 = lerp2(bx, 0.6), f1 = lerp2(bx2, 0.6);
+          const n0 = proj(bx, 0.12), n1 = proj(bx2, 0.12), f0 = proj(bx, 0.6), f1 = proj(bx2, 0.6);
           bgCtx.beginPath();
           bgCtx.moveTo(n0[0], n0[1]);
           bgCtx.lineTo(n1[0], n1[1]);
@@ -1080,6 +1188,38 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
     <>
       <canvas ref={bgCanvasRef} style={{ ...layer, zIndex: 0 }} />
       <canvas ref={fgCanvasRef} style={{ ...layer, zIndex: 6 }} />
+      {import.meta.env.DEV && followCursor && (
+        <div style={KB_PANEL.box}>
+          <div style={KB_PANEL.head}>keyboard tuning</div>
+          {KB_CONTROLS.map(([key, label, min, max, step]) => (
+            <label key={key} style={KB_PANEL.row}>
+              <span style={KB_PANEL.label}>{label}</span>
+              <input
+                type="range"
+                min={min}
+                max={max}
+                step={step}
+                value={kb[key]}
+                onChange={(e) => setKb((s) => ({ ...s, [key]: +e.target.value }))}
+                style={KB_PANEL.slider}
+              />
+              <span style={KB_PANEL.val}>{kb[key]}</span>
+            </label>
+          ))}
+          <div style={KB_PANEL.btnRow}>
+            <button style={KB_PANEL.btn} onClick={() => setKb(KB_DEFAULTS)}>Reset</button>
+            <button
+              style={KB_PANEL.btn}
+              onClick={() => {
+                console.log("[keyboard tuning]", kb);
+                navigator.clipboard?.writeText(JSON.stringify(kb, null, 2));
+              }}
+            >
+              Copy
+            </button>
+          </div>
+        </div>
+      )}
     </>
   );
 }
