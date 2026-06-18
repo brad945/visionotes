@@ -805,7 +805,7 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
         const kbLeft = nMin - margin;
         const kbW = nMax - nMin + 2 * margin;
         const nearY = sumY / FINGERS.length + 0.02 * unit; // front (near) edge — where the fingers press
-        const faceH = 0.05 * unit; // short front faces (low side angle)
+        const faceH = 0.1 * unit; // key thickness / front+side face height (taller = more solid 3D)
         const nWhite = Math.max(7, Math.round(kbW / (0.115 * unit)));
         const wKeyW = kbW / nWhite;
         // EXTEND: extra white keys added to the LEFT and RIGHT. The VP / perspective / wKeyW
@@ -903,24 +903,24 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
           const fl = proj(x, 1), fr = proj(x2, 1); // far (back) edge — yawed
           const A = [nl[0], nl[1] + dy], B = [nr[0], nr[1] + dy]; // top corners: near sinks on press
           const C = [fr[0], fr[1]], D = [fl[0], fl[1]];           // far edge fixed
-          const Ad = [A[0], A[1] + faceH], Bd = [B[0], B[1] + faceH]; // straight-down extrusions
+          const Ad = [A[0], A[1] + faceH], Bd = [B[0], B[1] + faceH]; // straight-down extrusions (key thickness)
           const Cd = [C[0], C[1] + faceH], Dd = [D[0], D[1] + faceH];
           const pressed = press > 0.06;
-          // (a) BODY — silhouette hull of all 8 corners, side colour = front colour, NO stroke
-          //     (a body stroke would redraw the seam and re-open the gaps). Fills the inter-key gaps.
-          bgCtx.fillStyle = pressed ? "rgb(112,150,170)" : "rgb(198,205,214)";
+          // (a) BODY — silhouette hull of the 8 box corners (top quad + faceH down), filled the SAME
+          //     WHITE as the top (no dark side-wall "depth wedge"), NO stroke. Its only job now is to
+          //     fill the inter-key gaps so there's no see-through — the key reads as one solid flat
+          //     white surface, not a 3D box.
+          bgCtx.fillStyle = pressed ? "rgb(150,196,216)" : "rgb(240,244,249)";
           fillHull(convexHull([A, B, C, D, Ad, Bd, Cd, Dd]));
-          // (b) TOP CAP — today's exact top quad + the per-key seam stroke
+          // (b) TOP CAP — the white key top + the per-key seam stroke (the only lines kept). The
+          //     white body already fills the front/side area, so there is NO grey "depth wedge" lip
+          //     and no diagonal triangle border — each key reads as one solid flat white surface,
+          //     separated from its neighbours only by the thin seam.
           bgCtx.fillStyle = pressed ? "rgb(150,196,216)" : "rgb(240,244,249)";
           bgCtx.strokeStyle = "rgba(10,14,20,0.5)";
           bgCtx.lineWidth = 1;
           bgCtx.beginPath();
           bgCtx.moveTo(A[0], A[1]); bgCtx.lineTo(B[0], B[1]); bgCtx.lineTo(C[0], C[1]); bgCtx.lineTo(D[0], D[1]);
-          bgCtx.closePath(); bgCtx.fill(); bgCtx.stroke();
-          // (c) FRONT LIP — today's exact front face (the only wall visible at yaw 0)
-          bgCtx.fillStyle = pressed ? "rgb(112,150,170)" : "rgb(198,205,214)";
-          bgCtx.beginPath();
-          bgCtx.moveTo(A[0], A[1]); bgCtx.lineTo(B[0], B[1]); bgCtx.lineTo(Bd[0], Bd[1]); bgCtx.lineTo(Ad[0], Ad[1]);
           bgCtx.closePath(); bgCtx.fill(); bgCtx.stroke();
         }
         // black keys: small CONSTANT extruded body so they don't vanish at steep yaw (subordinate)
