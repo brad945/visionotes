@@ -728,7 +728,7 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
         // below are ALL from the ORIGINAL keyboard and left UNCHANGED — we just draw more key
         // slots (k from -EXT_L .. nWhite+EXT_R) with that same fixed mapping, so the original
         // keys stay pixel-identical and the new ones are exact copies.
-        const EXT_L = 6, EXT_R = 12;
+        const EXT_L = 12, EXT_R = 12;
         // SIDE VIEW (like watching a pianist from the side): the keyboard recedes off
         // into the distance to the RIGHT, so the vanishing point is far to the right and
         // only slightly up — the keys angle sideways rather than facing forward.
