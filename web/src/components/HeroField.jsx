@@ -324,7 +324,7 @@ const KB_CONTROLS = [
   ["posY", "pos Y", -400, 400, 1],
   ["scale", "scale", 0.3, 3, 0.01],
   ["tiltDeg", "tilt Δ°", -45, 45, 0.1],
-  ["yawDeg", "yaw °", -45, 45, 0.5],
+  ["yawDeg", "yaw °", -90, 90, 0.5],
   ["depth", "depth", 0.15, 1.5, 0.01],
   ["extL", "ext L", 0, 40, 1],
   ["extR", "ext R", 0, 40, 1],
