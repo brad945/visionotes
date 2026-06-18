@@ -779,7 +779,10 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
       // UNDER the hand. The keyboard is fixed (so the lateral run reads as the hand
       // moving along the keys) and the key under each striking fingertip sinks in
       // sync with the finger press.
-      if (pianoGate > 0.02) {
+      {
+        // Keyboard is ALWAYS on screen (its geometry is the fixed rest pose, so it never moves).
+        // It just stops *playing* when the hand leaves piano mode: the strike strength below is
+        // still gated by pianoGate, so keys only light/sink while idle-playing, not while tracking.
         const k = kbRef.current; // live tuning knobs (DEV panel); = KB_DEFAULTS in production
         const tips = fingerJobs.map((job, idx) => ({ x: job.tip[0], y: job.tip[1], s: pianoFlexArr[order[idx]] * pianoGate }));
         // Keyboard SIZE/POSITION is computed from the CONSTANT rest pose (fixed angles, base
@@ -838,9 +841,10 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
         };
         const proj = (X, w) => projUV((X - pivotXk) / Uspan, w); // by near-edge X (drop-in)
         bgCtx.save();
-        // OPAQUE keys (only the fade-in uses alpha): otherwise the page background
-        // bleeds through and, on the dark theme, blackens the pressed front faces.
-        bgCtx.globalAlpha = pianoGate;
+        // Fully OPAQUE and ALWAYS visible: the page background must not bleed through (on
+        // dark theme it blackens the pressed front faces), and the keyboard now stays on
+        // screen even when the hand is tracking the cursor or doing the thumbs-up morph.
+        bgCtx.globalAlpha = 1;
         // rotate the keyboard CLOCKWISE around the (FIXED) base of the thumb. Use the
         // CONSTANT rest-pose thumb MCP so the pivot never moves → the whole keyboard is
         // stable in size AND place (not tied to the live, breathing thumb).
