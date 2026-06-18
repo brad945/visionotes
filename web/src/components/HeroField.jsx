@@ -386,6 +386,10 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
     // darker patches. The same buffer is reused to cast the hand's soft drop shadow.
     const handCanvas = document.createElement("canvas");
     const handCtx = handCanvas.getContext("2d");
+    // Second buffer: a dark silhouette of the hand, projected (squashed) onto the keyboard plane
+    // to cast a contact-correct shadow (no offset where a finger touches a key).
+    const shadowCanvas = document.createElement("canvas");
+    const shadowCtx = shadowCanvas.getContext("2d");
     const canvas = bgCanvas; // the bg canvas drives sizing / cursor math
 
     let W, H, DPR, unit, cx, wristY;
@@ -415,7 +419,7 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
       const r = canvas.getBoundingClientRect();
       W = r.width;
       H = r.height;
-      for (const [cv, c2] of [[bgCanvas, bgCtx], [fgCanvas, fgCtx], [handCanvas, handCtx]]) {
+      for (const [cv, c2] of [[bgCanvas, bgCtx], [fgCanvas, fgCtx], [handCanvas, handCtx], [shadowCanvas, shadowCtx]]) {
         cv.width = W * DPR;
         cv.height = H * DPR;
         c2.setTransform(DPR, 0, 0, DPR, 0, 0);
@@ -1189,20 +1193,39 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
           const im = idxJob.joints[0];
           outline(fgCtx, idxJob.poly, [], 67.7 + 3 * 100, { polys: bodyPolys, cx: im[0], cy: im[1], r2: idxJob.capR * idxJob.capR });
         }
-        // SHADOW + COMPOSITE — cast the hand's soft drop shadow onto the keyboard, then blit the
-        // opaque buffer at ONE uniform alpha. The shadow uses the "draw the image off-canvas so only
-        // its offset shadow lands" trick → a real cast shadow without a second silhouette pass.
+        // SHADOW — project the hand onto the keyboard PLANE, anchored at the finger CONTACT line,
+        // so it is logical to the keys: a finger touching a key casts essentially no offset shadow
+        // (its shadow sits right under it → hidden by the finger), while the raised palm/arm cast a
+        // longer, softer shadow back across the keys. Method: build a dark silhouette of the hand,
+        // then draw it squashed toward the contact line (a shadow "laid flat" on the ground plane).
+        let cYsum = 0; // contact line = average fingertip height (where the fingers meet the keys)
+        for (const j of fingerJobs) cYsum += j.tip[1];
+        const contactY = cYsum / fingerJobs.length;
+        // (1) dark, alpha-masked silhouette of the hand
+        shadowCtx.setTransform(1, 0, 0, 1, 0, 0);
+        shadowCtx.globalAlpha = 1;
+        shadowCtx.globalCompositeOperation = "source-over";
+        shadowCtx.clearRect(0, 0, shadowCanvas.width, shadowCanvas.height);
+        shadowCtx.drawImage(handCanvas, 0, 0);
+        shadowCtx.globalCompositeOperation = "source-in"; // recolour to flat black, keep the alpha
+        shadowCtx.fillStyle = "#000";
+        shadowCtx.fillRect(0, 0, shadowCanvas.width, shadowCanvas.height);
+        shadowCtx.globalCompositeOperation = "source-over";
+        // (2) project it onto the keys (device-px affine: squash vertically toward contactY + lean)
         bgCtx.save();
-        bgCtx.setTransform(1, 0, 0, 1, 0, 0); // device px: blit the buffer 1:1
-        bgCtx.globalAlpha = 1;
-        bgCtx.shadowColor = "rgba(0,0,0,0.4)";
-        bgCtx.shadowBlur = 16 * DPR;
-        bgCtx.shadowOffsetX = 1e5 + 9 * DPR; // image drawn at −1e5 → shadow lands at +9px (down-right)
-        bgCtx.shadowOffsetY = 16 * DPR;
-        bgCtx.drawImage(handCanvas, -1e5, 0);
-        bgCtx.shadowColor = "rgba(0,0,0,0)";
-        bgCtx.shadowBlur = 0; bgCtx.shadowOffsetX = 0; bgCtx.shadowOffsetY = 0;
-        bgCtx.globalAlpha = MODEL_ALPHA; // the whole hand at one uniform alpha
+        bgCtx.setTransform(1, 0, 0, 1, 0, 0);
+        const cY = contactY * DPR;
+        const KS = 0.5;  // vertical squash toward the contact line → lays the shadow flat on the keys
+        const KX = 0.45; // horizontal lean (light from the upper-left)
+        bgCtx.transform(1, 0, KX, KS, -KX * cY, cY * (1 - KS));
+        bgCtx.globalAlpha = 0.5;
+        bgCtx.filter = `blur(${5 * DPR}px)`;
+        bgCtx.drawImage(shadowCanvas, 0, 0);
+        bgCtx.restore();
+        // COMPOSITE the hand at ONE uniform alpha
+        bgCtx.save();
+        bgCtx.setTransform(1, 0, 0, 1, 0, 0);
+        bgCtx.globalAlpha = MODEL_ALPHA;
         bgCtx.drawImage(handCanvas, 0, 0);
         bgCtx.restore();
         ctx = bgCtx;
