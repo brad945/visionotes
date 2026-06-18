@@ -381,6 +381,11 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
     if (!bgCanvas || !fgCanvas) return;
     const bgCtx = bgCanvas.getContext("2d");
     const fgCtx = fgCanvas.getContext("2d");
+    // Offscreen buffer: the whole hand/arm is drawn here OPAQUE, then composited onto the
+    // scene at one uniform alpha — so overlapping parts (fingers/palm/arm) never stack into
+    // darker patches. The same buffer is reused to cast the hand's soft drop shadow.
+    const handCanvas = document.createElement("canvas");
+    const handCtx = handCanvas.getContext("2d");
     const canvas = bgCanvas; // the bg canvas drives sizing / cursor math
 
     let W, H, DPR, unit, cx, wristY;
@@ -410,7 +415,7 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
       const r = canvas.getBoundingClientRect();
       W = r.width;
       H = r.height;
-      for (const [cv, c2] of [[bgCanvas, bgCtx], [fgCanvas, fgCtx]]) {
+      for (const [cv, c2] of [[bgCanvas, bgCtx], [fgCanvas, fgCtx], [handCanvas, handCtx]]) {
         cv.width = W * DPR;
         cv.height = H * DPR;
         c2.setTransform(DPR, 0, 0, DPR, 0, 0);
@@ -501,7 +506,7 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
     function draw() {
       const now = performance.now();
       const t = (now - t0) / 1000;
-      const ctx = bgCtx; // main render target = the layer drawn BEHIND the form
+      let ctx = bgCtx; // hand render target (reassigned to the offscreen buffer for the normal hand)
       bgCtx.clearRect(0, 0, W, H);
       fgCtx.clearRect(0, 0, W, H);
       bgCtx.globalAlpha = MODEL_ALPHA; // render the whole model slightly transparent
@@ -1028,6 +1033,16 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
       // Dot morph: on a successful send (vn-email-sent), the HAND (palm + fingers) dots
       // fly into a static THUMBS-UP (fist + thumb) and back. The FOREARM stays normal.
       // (`morph` was computed earlier so the keyboard could fade with it.)
+      // Route the NORMAL hand through the offscreen buffer (drawn opaque, then composited at one
+      // uniform alpha so overlaps never darken). The MORPH path is left drawing straight to bgCtx.
+      if (inMorphSeq) {
+        ctx = bgCtx;
+      } else {
+        handCtx.setTransform(DPR, 0, 0, DPR, 0, 0);
+        handCtx.clearRect(0, 0, W, H);
+        handCtx.globalAlpha = 1;
+        ctx = handCtx;
+      }
       // 1) FOREARM — always drawn solid (forearm = bodyPolys[0]; palm = bodyPolys[1]). The
       //    thumbs-up gets its OWN fill (below) so the arm + hand match and overlap solidly.
       ctx.fillStyle = fill;
@@ -1161,8 +1176,11 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
           outline(ctx, job.poly, [], 67.7 + fi * 100, { polys: bodyPolys, cx: mcp[0], cy: mcp[1], r2: job.capR * job.capR });
         }
 
-        // 4) Foreground layer: redraw ONLY the index finger on the top canvas (above the form).
-        const idxJob = fingerJobs[3];
+        // 4) Foreground layer: redraw the index finger on the top canvas (above the form) ONLY when
+        //    the hand is actually reaching over the form (tracking / lunging at Send). In the idle
+        //    piano state the index never overlaps the form, so the redundant fg copy is skipped —
+        //    the index then comes solely from the uniform offscreen buffer (no overlap patch).
+        const idxJob = (overButton || front > 0.05) ? fingerJobs[3] : null;
         if (idxJob) {
           fgCtx.fillStyle = fill;
           pathPoly(fgCtx, idxJob.poly);
@@ -1171,6 +1189,23 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
           const im = idxJob.joints[0];
           outline(fgCtx, idxJob.poly, [], 67.7 + 3 * 100, { polys: bodyPolys, cx: im[0], cy: im[1], r2: idxJob.capR * idxJob.capR });
         }
+        // SHADOW + COMPOSITE — cast the hand's soft drop shadow onto the keyboard, then blit the
+        // opaque buffer at ONE uniform alpha. The shadow uses the "draw the image off-canvas so only
+        // its offset shadow lands" trick → a real cast shadow without a second silhouette pass.
+        bgCtx.save();
+        bgCtx.setTransform(1, 0, 0, 1, 0, 0); // device px: blit the buffer 1:1
+        bgCtx.globalAlpha = 1;
+        bgCtx.shadowColor = "rgba(0,0,0,0.4)";
+        bgCtx.shadowBlur = 16 * DPR;
+        bgCtx.shadowOffsetX = 1e5 + 9 * DPR; // image drawn at −1e5 → shadow lands at +9px (down-right)
+        bgCtx.shadowOffsetY = 16 * DPR;
+        bgCtx.drawImage(handCanvas, -1e5, 0);
+        bgCtx.shadowColor = "rgba(0,0,0,0)";
+        bgCtx.shadowBlur = 0; bgCtx.shadowOffsetX = 0; bgCtx.shadowOffsetY = 0;
+        bgCtx.globalAlpha = MODEL_ALPHA; // the whole hand at one uniform alpha
+        bgCtx.drawImage(handCanvas, 0, 0);
+        bgCtx.restore();
+        ctx = bgCtx;
       }
 
       rafId = requestAnimationFrame(draw);
