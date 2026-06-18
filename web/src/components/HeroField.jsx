@@ -308,21 +308,21 @@ function chordShape(seg, curl, prof) {
 // renders under import.meta.env.DEV — it never ships; the defaults below are
 // what production shows. Keep tweaking via the panel; tell me to re-bake.
 const KB_DEFAULTS = {
-  posX: 400, posY: -79,   // screen-px offset of the whole keyboard
-  scale: 1.94,           // size multiplier about the (fixed) pivot
+  posX: 800, posY: -122,   // screen-px offset of the whole keyboard
+  scale: 3,           // size multiplier about the (fixed) pivot
   tiltDeg: -1,         // 2D screen tilt, DELTA from the baseline (0.2 − 9°)
-  yawDeg: -28.5,        // top-down 3D yaw about the left edge (− = clockwise)
+  yawDeg: -51,        // top-down 3D yaw about the left edge (− = clockwise)
   depth: 0.65,        // yaw depth/sensitivity (larger = gentler swing)
   extL: 6, extR: 4, // extra key slots added left / right
   recede: 0.42,       // how far the key-backs travel toward the vanishing point
-  vpXf: 2.5,          // vanishing-point X factor (horizontal convergence)
-  vpYf: 0.3,          // vanishing-point Y factor (tilt into the distance)
+  vpXf: 1,            // vanishing-point X factor (horizontal convergence)
+  vpYf: 0.1,          // vanishing-point Y factor (tilt into the distance)
 };
 // [key, label, min, max, step]
 const KB_CONTROLS = [
-  ["posX", "pos X", -800, 800, 1],
+  ["posX", "pos X", -1200, 1200, 1],
   ["posY", "pos Y", -400, 400, 1],
-  ["scale", "scale", 0.3, 3, 0.01],
+  ["scale", "scale", 0.3, 5, 0.01],
   ["tiltDeg", "tilt Δ°", -45, 45, 0.1],
   ["yawDeg", "yaw °", -90, 90, 0.5],
   ["depth", "depth", 0.15, 1.5, 0.01],
@@ -371,6 +371,9 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
   const [kb, setKb] = useState(KB_DEFAULTS);
   const kbRef = useRef(kb);
   useEffect(() => { kbRef.current = kb; }, [kb]);
+  // The tuning panel is HIDDEN by default now that the look is dialed in, but kept
+  // in code: press "k" (dev only, not while typing in a field) to summon it again.
+  const [showPanel, setShowPanel] = useState(false);
 
   useEffect(() => {
     const bgCanvas = bgCanvasRef.current;
@@ -1165,8 +1168,11 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
       morphSrc = null; // re-snapshot the hand dots on the trigger frame
     }
     function onKeyDown(e) {
-      if (e.key === "g") onSent();
-    } // TEMP: press "g" to preview the thumbs-up morph
+      if (e.key === "g") onSent(); // TEMP: preview the thumbs-up morph
+      // toggle the keyboard tuning panel (dev only) — ignore while typing in a field
+      const tag = e.target && e.target.tagName;
+      if (e.key === "k" && tag !== "INPUT" && tag !== "TEXTAREA") setShowPanel((v) => !v);
+    }
 
     setup();
     rafId = requestAnimationFrame(draw);
@@ -1196,7 +1202,7 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
     <>
       <canvas ref={bgCanvasRef} style={{ ...layer, zIndex: 0 }} />
       <canvas ref={fgCanvasRef} style={{ ...layer, zIndex: 6 }} />
-      {import.meta.env.DEV && followCursor && (
+      {import.meta.env.DEV && followCursor && showPanel && (
         <div style={KB_PANEL.box}>
           <div style={KB_PANEL.head}>keyboard tuning</div>
           {KB_CONTROLS.map(([key, label, min, max, step]) => (
