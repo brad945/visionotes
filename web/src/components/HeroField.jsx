@@ -74,7 +74,7 @@ const LEFT_FADE = 600; // ms to fade into the piano once the grace elapses
 const IDLE_AFTER_MS = 2000; // cursor sitting still this long → relax to the rest pose too
 const IDLE_FADE_MS = 700; // ease into that idle over this window (no snap)
 const CLICK_MS = 220; // duration of the index "press" tap when the Send-link button is clicked
-const CLICK_DROP = 1.6 * DEG; // how far the index dips down at the peak of the press (very subtle)
+const CLICK_DROP = 4 * DEG; // how far the index dips down at the peak of the press (a clear little tap)
 // Idle "playing piano": a looping PHRASE through real keyboard gestures — an
 // ascending scale (thumb→pinky), a chord, an arpeggio, a descending scale, a chord.
 // Each event strikes its finger(s); the arm drifts laterally to follow the run and
