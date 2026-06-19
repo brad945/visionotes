@@ -9,6 +9,7 @@
  */
 
 import { createContext, useContext, useEffect, useRef, useState, useCallback } from "react";
+import { flushSync } from "react-dom";
 
 const STORAGE_KEY = "vn-theme"; // keep in sync with the inline script in index.html
 
@@ -60,11 +61,19 @@ export default function ThemeProvider({ children }) {
       /* storage unavailable (private mode) */
     }
 
-    // Apply instantly (NO View Transition cross-fade). The cross-fade snapshots and freezes the whole
-    // screen for ~0.25s, which stalled the canvas hand animation mid-tap and made the click feel laggy.
-    // Flipping straight away keeps the finger click-tap as snappy as the Send-link button.
-    applyDom(next);
-    setTheme(next);
+    // Apply React + DOM changes synchronously so the View Transition snapshots
+    // the new theme, then cross-fades the whole screen old→new.
+    const commit = () => {
+      flushSync(() => setTheme(next));
+      applyDom(next);
+    };
+
+    const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    if (document.startViewTransition && !reduce) {
+      document.startViewTransition(commit);
+    } else {
+      commit();
+    }
   }, []);
 
   return <ThemeContext.Provider value={{ theme, toggleTheme }}>{children}</ThemeContext.Provider>;
