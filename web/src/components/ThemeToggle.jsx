@@ -13,7 +13,7 @@ export default function ThemeToggle({ style }) {
     <button
       type="button"
       onClick={toggleTheme}
-      className="vn-btn vn-btn--ghost"
+      className="vn-btn vn-btn--ghost vn-theme-toggle"
       aria-label={label}
       title={label}
       style={{ padding: "6px 9px", lineHeight: 0, ...style }}

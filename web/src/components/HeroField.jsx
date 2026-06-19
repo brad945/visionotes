@@ -519,15 +519,18 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
       // Lunge toward the "Send link" button when the cursor is over it: ease the
       // whole model so the index fingertip closes onto the cursor (just touching the
       // button). While hovering, keep the hand engaged (reset the idle timeout).
-      const sendBtn = followCursor && mouseX != null ? document.querySelector(".login-send-btn") : null;
-      let overButton = false;
-      if (sendBtn) {
-        const br = sendBtn.getBoundingClientRect();
+      // Hover-lunge over the Send-link button OR the theme toggle (the finger chases the cursor onto
+      // whichever it's over).
+      const overEl = (sel) => {
+        if (!(followCursor && mouseX != null)) return false;
+        const el = document.querySelector(sel);
+        if (!el) return false;
+        const br = el.getBoundingClientRect();
         const cr = canvas.getBoundingClientRect();
-        const pxc = mouseX + cr.left;
-        const pyc = mouseY + cr.top;
-        overButton = pxc >= br.left && pxc <= br.right && pyc >= br.top && pyc <= br.bottom;
-      }
+        const pxc = mouseX + cr.left, pyc = mouseY + cr.top;
+        return pxc >= br.left && pxc <= br.right && pyc >= br.top && pyc <= br.bottom;
+      };
+      const overButton = overEl(".login-send-btn") || overEl(".vn-theme-toggle");
       if (overButton) {
         lastMove = now; // stay engaged while hovering the button
         if (lastIdxTip) {
