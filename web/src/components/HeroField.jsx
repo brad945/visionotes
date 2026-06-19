@@ -1223,6 +1223,10 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
         bgCtx.transform(1, 0, KX, KS, -KX * cY, cY * (1 - KS));
         bgCtx.globalAlpha = 0.5;
         bgCtx.filter = `blur(${5 * DPR}px)`;
+        // Only cast the shadow onto the KEYBOARD (which is already on bg here, before the hand) — not
+        // onto the empty page background. In dark mode that stray shadow was invisible (dark on dark);
+        // in light mode it showed as a grey smudge floating where there's no surface.
+        bgCtx.globalCompositeOperation = "source-atop";
         bgCtx.drawImage(shadowCanvas, 0, 0);
         bgCtx.restore();
         // COMPOSITE the hand at ONE uniform alpha
