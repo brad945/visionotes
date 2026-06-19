@@ -1,6 +1,5 @@
 import { NavLink } from "react-router-dom";
 import { useAuth } from "../auth/AuthProvider";
-import { supabase } from "../supabaseClient";
 import ThemeToggle from "./ThemeToggle";
 
 const linkStyle = ({ isActive }) => ({
@@ -13,7 +12,7 @@ const linkStyle = ({ isActive }) => ({
 });
 
 export default function Navbar() {
-  const { user } = useAuth();
+  const { user, signOut } = useAuth();
 
   return (
     <nav style={{ display: "flex", alignItems: "center", gap: 24, padding: "16px 0", borderBottom: "1px solid var(--line)" }}>
@@ -24,7 +23,7 @@ export default function Navbar() {
       <NavLink to="/groups" style={linkStyle}>Groups</NavLink>
       <ThemeToggle />
       {user && (
-        <button onClick={() => supabase.auth.signOut()} className="vn-btn vn-btn--ghost">
+        <button onClick={signOut} className="vn-btn vn-btn--ghost">
           Log out
         </button>
       )}

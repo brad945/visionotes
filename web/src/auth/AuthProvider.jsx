@@ -1,7 +1,7 @@
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState, useCallback } from "react";
 import { supabase } from "../supabaseClient";
 
-const AuthContext = createContext({ user: null, loading: true });
+const AuthContext = createContext({ user: null, loading: true, signOut: async () => {} });
 
 // TEMP (testing): in LOCAL DEV ONLY, skip the email magic-link and auto-log-in as a mock user,
 // so the Supabase email rate limit can't block testing. import.meta.env.DEV is FALSE in the
@@ -36,8 +36,15 @@ export default function AuthProvider({ children }) {
     return () => subscription.unsubscribe();
   }, []);
 
+  // Logout that also works under the dev bypass (where there's no real Supabase session to
+  // clear): just drop the mock user so the login screen shows. A refresh re-applies the bypass.
+  const signOut = useCallback(async () => {
+    if (DEV_BYPASS_AUTH) { setUser(null); return; }
+    await supabase.auth.signOut();
+  }, []);
+
   return (
-    <AuthContext.Provider value={{ user, loading }}>
+    <AuthContext.Provider value={{ user, loading, signOut }}>
       {children}
     </AuthContext.Provider>
   );
