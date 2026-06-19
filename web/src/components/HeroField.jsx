@@ -1244,8 +1244,10 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
       lastMove = performance.now();
     }
     function onMouseDown(e) {
-      const btn = document.querySelector(".login-send-btn");
-      if (btn && (e.target === btn || btn.contains(e.target))) clickT = performance.now();
+      // index-finger press tap on a click of EITHER the Send link button or the theme toggle
+      if (e.target && e.target.closest && e.target.closest(".login-send-btn, .vn-theme-toggle")) {
+        clickT = performance.now();
+      }
     }
     function onResize() {
       clearTimeout(resizeTimer);
