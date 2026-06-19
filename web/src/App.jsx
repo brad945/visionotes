@@ -40,7 +40,7 @@ export default function App() {
         }}
       >
         <HeroField background overlay followCursor scale={0.5} />
-        <div style={{ position: "absolute", top: 76, left: 0, right: 0, zIndex: 3, display: "flex", justifyContent: "center", transform: "translateX(340px)" }}>
+        <div style={{ position: "absolute", top: 76, left: 0, right: 0, zIndex: 3, display: "flex", justifyContent: "center", transform: "translateX(370px)" }}>
           <ThemeToggle
             style={
               dark
