@@ -944,10 +944,8 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
           if (![0, 1, 3, 4, 5].includes(((k % 7) + 7) % 7)) continue; // +mod handles k<0
           const bx = kbLeft + (k + 1) * wKeyW - bkW / 2;
           const bx2 = bx + bkW;
-          // Run from near the back edge (w=0.08) to w=0.8 so the black keys extend
-          // nearly as far forward as the white keys (leaving a thin white-only front
-          // strip), instead of stopping short at ~0.6 and looking truncated.
-          const n0 = proj(bx, 0.08), n1 = proj(bx2, 0.08), f0 = proj(bx, 0.8), f1 = proj(bx2, 0.8);
+          // near edge set back along the recede (start ~12%), far ~60% — shorter than whites
+          const n0 = proj(bx, 0.12), n1 = proj(bx2, 0.12), f0 = proj(bx, 0.6), f1 = proj(bx2, 0.6);
           const bn0 = [n0[0], n0[1] + BK_DOWN], bn1 = [n1[0], n1[1] + BK_DOWN];
           const bf0 = [f0[0], f0[1] + BK_DOWN], bf1 = [f1[0], f1[1] + BK_DOWN];
           bgCtx.fillStyle = "rgb(8,10,14)"; // body, no stroke
