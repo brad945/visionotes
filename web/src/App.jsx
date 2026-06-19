@@ -40,7 +40,7 @@ export default function App() {
         }}
       >
         <HeroField background overlay followCursor scale={0.5} />
-        <div style={{ position: "absolute", top: 51, left: 0, right: 0, zIndex: 3, display: "flex", justifyContent: "center", transform: "translateX(500px)" }}>
+        <div style={{ position: "absolute", top: 51, left: 0, right: 0, zIndex: 3, display: "flex", justifyContent: "center", transform: "translateX(525px)" }}>
           <ThemeToggle
             style={
               dark
@@ -55,7 +55,7 @@ export default function App() {
             }
           />
         </div>
-        <div style={{ position: "relative", zIndex: 2, marginTop: 132, padding: "0 16px", transform: "translateX(500px)" }}>
+        <div style={{ position: "relative", zIndex: 2, marginTop: 132, padding: "0 16px", transform: "translateX(525px)" }}>
           <Login splash={dark} />
         </div>
       </div>
