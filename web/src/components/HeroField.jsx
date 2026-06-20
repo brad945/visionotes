@@ -516,6 +516,13 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
       bgCtx.globalAlpha = MODEL_ALPHA; // render the whole model slightly transparent
       fgCtx.globalAlpha = MODEL_ALPHA;
 
+      // Morph-sequence window (thumbs-up). Computed UP HERE so the lunge can freeze during it:
+      // the morph snapshots the hand dots once, but the forearm keeps drawing live — if the lunge
+      // eased home meanwhile, the arm would drift off the snapshotted hand (the click-Send-vs-'g' bug).
+      const sinceSent = now - sentT;
+      const MORPH_TOTAL = MORPH_PAUSE_IN + MORPH_RISE + MORPH_HOLD + MORPH_FALL + MORPH_PAUSE_OUT;
+      const inMorphSeq = sinceSent >= 0 && sinceSent < MORPH_TOTAL;
+
       // Lunge toward the "Send link" button when the cursor is over it: ease the
       // whole model so the index fingertip closes onto the cursor (just touching the
       // button). While hovering, keep the hand engaged (reset the idle timeout).
@@ -531,7 +538,10 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
         return pxc >= br.left && pxc <= br.right && pyc >= br.top && pyc <= br.bottom;
       };
       const overButton = overEl(".login-send-btn") || overEl(".vn-theme-toggle");
-      if (overButton) {
+      if (inMorphSeq) {
+        // FREEZE the lunge during the morph so the live forearm stays glued to the snapshotted
+        // (possibly lunged) hand — otherwise the arm eases home and detaches at the wrist.
+      } else if (overButton) {
         lastMove = now; // stay engaged while hovering the button
         if (lastIdxTip) {
           lungeX += (mouseX - lastIdxTip[0]) * 0.1; // close the gap to the cursor
@@ -570,9 +580,6 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
       // thumbs-up) → HOLD → FALL (fly back) → PAUSE (frozen) → resume. The pauses make it
       // obvious the SAME dots form both the hand and the thumbs-up. `morph` = 0 (hand) → 1
       // (thumbs-up). `inMorphSeq` = the whole sequence (the hand is frozen throughout it).
-      const sinceSent = now - sentT;
-      const MORPH_TOTAL = MORPH_PAUSE_IN + MORPH_RISE + MORPH_HOLD + MORPH_FALL + MORPH_PAUSE_OUT;
-      const inMorphSeq = sinceSent >= 0 && sinceSent < MORPH_TOTAL;
       let morph = 0;
       if (inMorphSeq) {
         const r0 = MORPH_PAUSE_IN, r1 = r0 + MORPH_RISE, h1 = r1 + MORPH_HOLD, f1 = h1 + MORPH_FALL;
