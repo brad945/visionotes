@@ -592,7 +592,7 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
 
       // Idle piano: run the phrase, dip the wrist on strikes (weight) and drift the
       // arm laterally toward the most-recent note (so it "follows" the run).
-      const pianoGate = (1 - front) * (inMorphSeq ? 0 : 1); // off during the whole morph
+      const pianoGate = (1 - idleActive) * (inMorphSeq ? 0 : 1); // off during the whole morph
       const handFrozen = inMorphSeq; // freeze the hand pose so the dots hold + resume cleanly
       const phraseT = (t * PIANO_BPS) % PIANO_PHRASE_BEATS;
       const pianoFlexArr = [0, 0, 0, 0, 0];
