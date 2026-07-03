@@ -19,7 +19,7 @@ export default function Navbar() {
       <span style={{ fontWeight: 700, fontSize: 20, letterSpacing: "-0.02em", marginRight: "auto" }}>VisioNotes</span>
       <NavLink to="/" style={linkStyle} end>Practice</NavLink>
       <NavLink to="/history" style={linkStyle}>History</NavLink>
-      <NavLink to="/visualize" style={linkStyle}>Visualize</NavLink>
+      <NavLink to="/visualize" style={linkStyle}>Graph</NavLink>
       <NavLink to="/groups" style={linkStyle}>Groups</NavLink>
       <ThemeToggle />
       {user && (
