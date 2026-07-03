@@ -6,7 +6,8 @@ const AuthContext = createContext({ user: null, loading: true, signOut: async ()
 // TEMP (testing): in LOCAL DEV ONLY, skip the email magic-link and auto-log-in as a mock user,
 // so the Supabase email rate limit can't block testing. import.meta.env.DEV is FALSE in the
 // production build, so this NEVER activates on the deployed site. Remove when done testing.
-const DEV_BYPASS_AUTH = import.meta.env.DEV;
+// Bypassed when the user explicitly logged out this session (sessionStorage flag).
+const DEV_BYPASS_AUTH = import.meta.env.DEV && !sessionStorage.getItem("dev-logged-out");
 const DEV_MOCK_USER = { id: "00000000-0000-0000-0000-000000000000", email: "dev@local.test" };
 
 export function useAuth() {
@@ -36,11 +37,19 @@ export default function AuthProvider({ children }) {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Logout that also works under the dev bypass (where there's no real Supabase session to
-  // clear): just drop the mock user so the login screen shows. A refresh re-applies the bypass.
   const signOut = useCallback(async () => {
-    if (DEV_BYPASS_AUTH) { setUser(null); return; }
-    await supabase.auth.signOut();
+    if (import.meta.env.DEV) {
+      // In dev: mark logged-out so the bypass doesn't re-apply on reload, then
+      // also clear the real Supabase session if one exists (non-bypass flows).
+      sessionStorage.setItem("dev-logged-out", "1");
+      setUser(null);
+      supabase.auth.signOut().catch(() => {}); // best-effort; ignore network errors
+      return;
+    }
+    // Production: force local state to null immediately so the UI responds even
+    // if the Supabase server call is slow or fails (it still clears localStorage).
+    setUser(null);
+    await supabase.auth.signOut().catch(() => {});
   }, []);
 
   return (
