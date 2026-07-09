@@ -54,7 +54,7 @@ export default function Practice() {
   };
 
   const handleStop = async () => {
-    const events = stop();
+    const { events, landmarkFrames } = stop();
     setRunning(false);
     setSaving(true);
 
@@ -62,7 +62,7 @@ export default function Practice() {
       const { id, startedAt } = sessionRef.current;
       const durationSeconds = Math.round((Date.now() - startedAt) / 1000);
 
-      // Send summary + faults in parallel
+      // Send summary + faults in parallel (landmark frames wired in step 3)
       await Promise.all([
         endSession(id, durationSeconds, events.length),
         postFaults(id, events),

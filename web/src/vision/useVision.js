@@ -46,6 +46,9 @@ export default function useVision(videoRef, canvasRef) {
   const armSmootherRef = useRef(new FaultSmoother());
   const fpsFramesRef = useRef([]); // timestamps of recent frames for FPS calc
   const lastStateUpdateRef = useRef(0); // throttle React state updates
+  const landmarkFramesRef = useRef([]); // skeleton replay frames
+  const lastSampleRef = useRef(0);      // timestamp of last sampled frame
+  const sessionStartRef = useRef(0);    // performance.now() when session started
 
   // ---- initialise models (once) ----
   const initModels = useCallback(async () => {
@@ -159,6 +162,36 @@ export default function useVision(videoRef, canvasRef) {
       // skip frame
     }
 
+    // --- Skeleton frame sampling (~6fps) ---
+    // Sample hand + pose landmarks at ~6fps for replay. Only x/y stored (no z)
+    // and rounded to 4dp to keep the JSON compact. Pose stores only the 6 arm
+    // indices (11–16); hands store all 21 knuckle points.
+    if (now - lastSampleRef.current > 160) {
+      lastSampleRef.current = now;
+      const frameT = Math.round(now - sessionStartRef.current);
+      let hands = null;
+      let pose = null;
+      try {
+        const hr = handLandmarkerRef.current.detectForVideo(video, lastTsRef.current);
+        if (hr.landmarks && hr.landmarks.length) {
+          hands = hr.landmarks.map((lm, i) => ({
+            h: hr.handedness[i]?.[0]?.categoryName ?? "Unknown",
+            lm: lm.map((p) => [+p.x.toFixed(4), +p.y.toFixed(4)]),
+          }));
+        }
+      } catch { /* skip */ }
+      try {
+        const pr = poseLandmarkerRef.current.detectForVideo(video, lastTsRef.current + 1);
+        if (pr.landmarks && pr.landmarks.length) {
+          const body = pr.landmarks[0];
+          pose = [11, 12, 13, 14, 15, 16].map((i) => [+body[i].x.toFixed(4), +body[i].y.toFixed(4)]);
+        }
+      } catch { /* skip */ }
+      if (hands || pose) {
+        landmarkFramesRef.current.push({ t: frameT, hands, pose });
+      }
+    }
+
     // --- FPS + resolution overlay ---
     const frameNow = performance.now();
     const frames = fpsFramesRef.current;
@@ -198,11 +231,14 @@ export default function useVision(videoRef, canvasRef) {
   const start = useCallback(async () => {
     await initModels();
 
-    // Reset smoothing + fault log
+    // Reset smoothing + fault log + skeleton capture
     wristSmootherRef.current.clear();
     armSmootherRef.current.clear();
     fpsFramesRef.current = [];
     lastTsRef.current = 0;
+    landmarkFramesRef.current = [];
+    lastSampleRef.current = 0;
+    sessionStartRef.current = performance.now();
     setLiveEvents([]);
 
     try {
@@ -245,7 +281,9 @@ export default function useVision(videoRef, canvasRef) {
       ...wristSmootherRef.current.harvest(),
       ...armSmootherRef.current.harvest(),
     ];
-    return events;
+    const landmarkFrames = landmarkFramesRef.current;
+    landmarkFramesRef.current = [];
+    return { events, landmarkFrames };
   }, [videoRef]);
 
   // Clean up on unmount
