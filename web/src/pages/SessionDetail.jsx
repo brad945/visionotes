@@ -365,6 +365,144 @@ function faultKey(fault) {
   return `${fault.hand ?? ""}_${fault.fault_type}`;
 }
 
+// --- Wrist diagram SVG ----------------------------------------------------------
+// A side-profile arm: forearm enters from the left, meets the wrist joint, then
+// the hand extends forward. `droop` (0–1) tilts the hand downward — 0 = neutral
+// good arch, 1 = fully collapsed. Clearly labeled as an estimate.
+function WristDiagram({ droop, label, sublabel, highlight }) {
+  const W = 110, H = 80;
+  // Forearm: fixed, enters from lower-left toward the wrist
+  const wx = 58, wy = 38; // wrist pivot
+  const fax = 8, fay = 62; // forearm far end
+  // Hand direction: neutral = slight upward arch; collapsed = tilted down
+  const neutralAngle = -0.18; // radians above horizontal (slight arch)
+  const collapsedAngle = 0.52; // radians below horizontal (drooped)
+  const handAngle = neutralAngle + droop * (collapsedAngle - neutralAngle);
+  const handLen = 40;
+  const hx = wx + Math.cos(handAngle) * handLen;
+  const hy = wy + Math.sin(handAngle) * handLen;
+  // Fingertip: curls slightly from the hand direction
+  const ftLen = 16;
+  const ftAngle = handAngle + 0.35 + droop * 0.2;
+  const ftx = hx + Math.cos(ftAngle) * ftLen;
+  const fty = hy + Math.sin(ftAngle) * ftLen;
+
+  // Arc showing the wrist angle
+  const arcR = 14;
+  const arcStart = Math.atan2(fay - wy, fax - wx); // toward forearm
+  const arcEnd = handAngle; // toward hand
+
+  const arcPath = (() => {
+    const x1 = wx + Math.cos(arcStart) * arcR;
+    const y1 = wy + Math.sin(arcStart) * arcR;
+    const x2 = wx + Math.cos(arcEnd) * arcR;
+    const y2 = wy + Math.sin(arcEnd) * arcR;
+    const large = Math.abs(arcEnd - arcStart) > Math.PI ? 1 : 0;
+    return `M ${x1} ${y1} A ${arcR} ${arcR} 0 ${large} 1 ${x2} ${y2}`;
+  })();
+
+  const stroke = highlight ? "var(--signal)" : "var(--ink-muted)";
+  const strokeW = highlight ? 2.5 : 2;
+
+  return (
+    <div style={{ textAlign: "center" }}>
+      <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{ display: "block", margin: "0 auto", overflow: "visible" }}>
+        {/* Forearm */}
+        <line x1={fax} y1={fay} x2={wx} y2={wy} stroke={stroke} strokeWidth={strokeW} strokeLinecap="round" />
+        {/* Hand */}
+        <line x1={wx} y1={wy} x2={hx} y2={hy} stroke={stroke} strokeWidth={strokeW} strokeLinecap="round" />
+        {/* Fingertip */}
+        <line x1={hx} y1={hy} x2={ftx} y2={fty} stroke={stroke} strokeWidth={strokeW * 0.7} strokeLinecap="round" />
+        {/* Wrist joint dot */}
+        <circle cx={wx} cy={wy} r={3.5} fill={stroke} />
+        {/* Wrist angle arc */}
+        <path d={arcPath} fill="none" stroke={highlight ? "var(--signal)" : "var(--line-strong)"} strokeWidth={1.5} strokeDasharray={highlight ? "none" : "3 2"} />
+      </svg>
+      <div style={{ fontSize: 13, fontWeight: 700, color: highlight ? "var(--signal)" : "var(--ink)", marginTop: 4 }}>{label}</div>
+      <div style={{ fontSize: 11, color: "var(--ink-muted)", marginTop: 2 }}>{sublabel}</div>
+    </div>
+  );
+}
+
+// --- Session progress (before/after) -------------------------------------------
+// Splits the session into first half vs second half and compares fault rates.
+// Uses only the fault_events we already have — no extra data needed.
+function SessionProgress({ allFaults, sessionDurationMs, timeOrigin }) {
+  const significant = allFaults.filter((f) => (f.value || 0) >= SIGNIFICANT_THRESHOLD_MS);
+  if (significant.length === 0 || sessionDurationMs < 30000) return null;
+
+  const midMs = sessionDurationMs / 2;
+  const halfMinutes = midMs / 60000;
+
+  const firstHalf = significant.filter((f) => (f.timestamp_ms - timeOrigin) < midMs);
+  const secondHalf = significant.filter((f) => (f.timestamp_ms - timeOrigin) >= midMs);
+
+  const firstRate = halfMinutes > 0 ? firstHalf.length / halfMinutes : 0;
+  const secondRate = halfMinutes > 0 ? secondHalf.length / halfMinutes : 0;
+  const firstTotalMs = firstHalf.reduce((s, f) => s + (f.value || 0), 0);
+  const secondTotalMs = secondHalf.reduce((s, f) => s + (f.value || 0), 0);
+
+  // delta: negative = improved (fewer faults in second half)
+  const improved = secondRate < firstRate;
+  const deltaLabel = firstRate === 0
+    ? null
+    : `${Math.abs(Math.round((secondRate - firstRate) / firstRate * 100))}%`;
+
+  // droop (0=good, 1=collapsed): map fault rate to droop. 0/min=0, 4+/min=1.
+  const rateToDroop = (r) => Math.min(1, r / 4);
+  const firstDroop = rateToDroop(firstRate);
+  const secondDroop = rateToDroop(secondRate);
+
+  const verdictColor = improved ? "var(--positive-deep)" : secondRate === firstRate ? "var(--ink-muted)" : "var(--signal-deep)";
+  const verdict = improved
+    ? `Fault rate dropped ${deltaLabel} in the second half — technique improving during this session.`
+    : secondRate === firstRate
+    ? "Fault rate was consistent across both halves."
+    : `Fault rate rose ${deltaLabel} in the second half — fatigue may be affecting technique.`;
+
+  return (
+    <div style={{ marginBottom: 28 }}>
+      <p className="vn-label" style={{ marginBottom: 10 }}>Session Progress</p>
+      <div style={{
+        border: "1px solid var(--line)", borderRadius: "var(--r-lg)",
+        background: "var(--surface)", overflow: "hidden",
+      }}>
+        <div style={{ display: "flex", alignItems: "stretch", gap: 0 }}>
+          {/* First half */}
+          <div style={{ flex: 1, padding: "16px 20px", textAlign: "center" }}>
+            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--ink-muted)", marginBottom: 12 }}>First half</div>
+            <WristDiagram droop={firstDroop} label={`${firstHalf.length} fault${firstHalf.length !== 1 ? "s" : ""}`} sublabel={`${firstRate.toFixed(1)}/min · ${(firstTotalMs / 1000).toFixed(1)}s`} highlight={!improved && secondRate !== firstRate} />
+          </div>
+
+          {/* Arrow + delta */}
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "0 8px", minWidth: 52 }}>
+            <div style={{ fontSize: 20, color: "var(--line-strong)" }}>→</div>
+            {deltaLabel && (
+              <div style={{ marginTop: 4, fontSize: 12, fontWeight: 700, color: improved ? "var(--positive-deep)" : "var(--signal-deep)" }}>
+                {improved ? "↓" : "↑"} {deltaLabel}
+              </div>
+            )}
+          </div>
+
+          {/* Second half */}
+          <div style={{ flex: 1, padding: "16px 20px", textAlign: "center", borderLeft: "1px solid var(--line)" }}>
+            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--ink-muted)", marginBottom: 12 }}>Second half</div>
+            <WristDiagram droop={secondDroop} label={`${secondHalf.length} fault${secondHalf.length !== 1 ? "s" : ""}`} sublabel={`${secondRate.toFixed(1)}/min · ${(secondTotalMs / 1000).toFixed(1)}s`} highlight={improved} />
+          </div>
+        </div>
+
+        {/* Verdict bar */}
+        <div style={{ padding: "10px 20px", borderTop: "1px solid var(--line)", background: "var(--surface-sunken)", fontSize: 13, color: verdictColor, fontWeight: 500 }}>
+          {verdict}
+          <span style={{ color: "var(--ink-muted)", fontWeight: 400, fontSize: 11, marginLeft: 8 }}>
+            (estimated from fault frequency — wrist diagrams are illustrative)
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // --- Main component -------------------------------------------------------------
 
 export default function SessionDetail() {
@@ -465,6 +603,9 @@ export default function SessionDetail() {
         <div><span className="vn-label">Duration</span><div className="vn-data" style={{ marginTop: 2 }}>{formatDuration(session.duration_seconds)}</div></div>
         <div><span className="vn-label">Significant faults</span><div className="vn-data" style={{ marginTop: 2 }}>{significant.length}</div></div>
       </div>
+
+      {/* Before/after progress */}
+      <SessionProgress allFaults={allFaults} sessionDurationMs={sessionDurationMs} timeOrigin={timeOrigin} />
 
       {/* Summary cards */}
       {summaryItems.length > 0 ? (
