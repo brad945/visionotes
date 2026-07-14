@@ -158,6 +158,54 @@ app.get("/sessions/:id", async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// POST /sessions/:id/landmarks — store skeleton replay frames
+// ---------------------------------------------------------------------------
+app.post("/sessions/:id/landmarks", async (req, res) => {
+  const { data: session, error: sessErr } = await supabase
+    .from("sessions")
+    .select("id")
+    .eq("id", req.params.id)
+    .eq("user_id", req.userId)
+    .single();
+
+  if (sessErr || !session) return res.status(404).json({ error: "Session not found" });
+
+  const { frames } = req.body;
+  if (!Array.isArray(frames)) return res.status(400).json({ error: "frames must be an array" });
+
+  const { error } = await supabase
+    .from("landmark_frames")
+    .upsert({ session_id: req.params.id, frames }, { onConflict: "session_id" });
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.status(201).json({ stored: frames.length });
+});
+
+// ---------------------------------------------------------------------------
+// GET /sessions/:id/landmarks — fetch skeleton replay frames
+// ---------------------------------------------------------------------------
+app.get("/sessions/:id/landmarks", async (req, res) => {
+  const { data: session, error: sessErr } = await supabase
+    .from("sessions")
+    .select("id")
+    .eq("id", req.params.id)
+    .eq("user_id", req.userId)
+    .single();
+
+  if (sessErr || !session) return res.status(404).json({ error: "Session not found" });
+
+  const { data, error } = await supabase
+    .from("landmark_frames")
+    .select("frames")
+    .eq("session_id", req.params.id)
+    .single();
+
+  if (error && error.code === "PGRST116") return res.json({ frames: [] });
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ frames: data.frames });
+});
+
+// ---------------------------------------------------------------------------
 // DELETE /sessions/:id — delete a session (fault_events cascade via FK)
 // ---------------------------------------------------------------------------
 app.delete("/sessions/:id", async (req, res) => {

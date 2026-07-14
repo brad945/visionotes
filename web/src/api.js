@@ -66,6 +66,25 @@ export async function getSession(sessionId) {
   return res.json();
 }
 
+export async function postLandmarks(sessionId, frames) {
+  if (!frames.length) return;
+  const res = await fetch(`${API_BASE}/sessions/${sessionId}/landmarks`, {
+    method: "POST",
+    headers: await authHeaders(),
+    body: JSON.stringify({ frames }),
+  });
+  if (!res.ok) throw new Error((await res.json()).error);
+  return res.json(); // { stored: N }
+}
+
+export async function getLandmarks(sessionId) {
+  const res = await fetch(`${API_BASE}/sessions/${sessionId}/landmarks`, {
+    headers: await authHeaders(),
+  });
+  if (!res.ok) throw new Error((await res.json()).error);
+  return res.json(); // { frames: [...] }
+}
+
 export async function deleteSession(sessionId) {
   const res = await fetch(`${API_BASE}/sessions/${sessionId}`, {
     method: "DELETE",

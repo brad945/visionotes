@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import useVision from "../vision/useVision";
-import { startSession, endSession, postFaults } from "../api";
+import { startSession, endSession, postFaults, postLandmarks } from "../api";
 import FaultList from "../components/FaultList";
 
 // Map the active fault label strings from useVision into the shape FaultList
@@ -62,10 +62,10 @@ export default function Practice() {
       const { id, startedAt } = sessionRef.current;
       const durationSeconds = Math.round((Date.now() - startedAt) / 1000);
 
-      // Send summary + faults in parallel (landmark frames wired in step 3)
       await Promise.all([
         endSession(id, durationSeconds, events.length),
         postFaults(id, events),
+        postLandmarks(id, landmarkFrames),
       ]);
     } catch (e) {
       console.error("Failed to save session:", e);
