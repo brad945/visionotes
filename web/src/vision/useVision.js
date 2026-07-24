@@ -37,6 +37,7 @@ export default function useVision(videoRef, canvasRef) {
   const [stats, setStats] = useState({ fps: 0, width: 0, height: 0 });
   const [handsDetected, setHandsDetected] = useState(false);
   const [poseDetected, setPoseDetected] = useState(false);
+  const [currentTs, setCurrentTs] = useState(0);
 
   // Mutable refs that persist across renders without re-triggering them
   const handLandmarkerRef = useRef(null);
@@ -231,6 +232,7 @@ export default function useVision(videoRef, canvasRef) {
       setStats({ fps, width: w, height: h });
       setHandsDetected(frameHandsDetected);
       setPoseDetected(framePoseDetected);
+      setCurrentTs(lastTsRef.current);
     }
     rafIdRef.current = requestAnimationFrame(detectLoop);
   }, [videoRef, canvasRef]);
@@ -306,5 +308,5 @@ export default function useVision(videoRef, canvasRef) {
     };
   }, []);
 
-  return { isLoading, error, faults, liveEvents, stats, handsDetected, poseDetected, start, stop };
+  return { isLoading, error, faults, liveEvents, stats, handsDetected, poseDetected, currentTs, start, stop };
 }

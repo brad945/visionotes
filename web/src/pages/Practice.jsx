@@ -40,7 +40,7 @@ export default function Practice() {
   const [liveFeedbackEnabled, setLiveFeedbackEnabled] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(() => !localStorage.getItem("vn-onboarded"));
   const sessionRef = useRef(null); // { id, startedAt }
-  const { isLoading, error, faults, liveEvents, handsDetected, poseDetected, start, stop } = useVision(
+  const { isLoading, error, faults, liveEvents, handsDetected, poseDetected, currentTs, start, stop } = useVision(
     videoRef,
     canvasRef
   );
@@ -129,7 +129,7 @@ export default function Practice() {
       )}
 
       {liveFeedbackEnabled && running && (
-        <LiveFeedbackPanel running={running} events={liveEvents} />
+        <LiveFeedbackPanel running={running} events={liveEvents} currentTs={currentTs} />
       )}
 
       {running && (
@@ -319,8 +319,8 @@ function FramingOverlay({ handsDetected, poseDetected, onConfirm }) {
   );
 }
 
-function LiveFeedbackPanel({ running, events }) {
-  const nowMs = events.reduce((latest, event) => (
+function LiveFeedbackPanel({ running, events, currentTs }) {
+  const nowMs = currentTs || events.reduce((latest, event) => (
     Math.max(latest, event.timestamp_ms + (event.value || 0))
   ), 0);
   const windowStart = Math.max(0, nowMs - LIVE_WINDOW_MS);
