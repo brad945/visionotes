@@ -177,9 +177,8 @@ function Timeline({ faults, sessionDurationMs, timeOrigin, playheadMs, onSeek })
         const barX = chartLeft + startFrac * chartWidth;
         const barW = Math.max(2, durFrac * chartWidth);
         const alpha = (ev.value || 0) >= SIGNIFICANT_THRESHOLD_MS ? 0.95 : 0.38;
-        const barLabel = (ev.value || 0) >= SIGNIFICANT_THRESHOLD_MS ? faultInitials(ev.fault_type, ev.hand) : "";
         const resolvedVisual = { fill: palette.fill, accent: palette.fill, radius: lane.visual.radius, textColor: palette.barText };
-        drawFaultBar(ctx, barX, y + 3, barW, laneHeight - 6, resolvedVisual, alpha, barLabel);
+        drawFaultBar(ctx, barX, y + 3, barW, laneHeight - 6, resolvedVisual, alpha, "");
 
         const startMs = ev.timestamp_ms - timeOrigin;
         const endMs = startMs + (ev.value || 0);
@@ -633,9 +632,6 @@ export default function SessionDetail() {
               >
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 13, color: "var(--ink-muted)" }}>
-                    <span className="vn-data" style={{ width: 24, height: 20, borderRadius: 5, background: "var(--signal)", color: "var(--on-signal)", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, letterSpacing: 0, lineHeight: 1, flex: "0 0 auto" }}>
-                      {s.initials}
-                    </span>
                     {s.label}
                   </div>
                   <input type="checkbox" checked={isSelected} onChange={() => toggleFaultKey(s.key)} onClick={(e) => e.stopPropagation()} aria-label={`Show only ${s.label}`} className="vn-accent-control" style={{ width: 18, height: 18, margin: 0, cursor: "pointer", flex: "0 0 auto" }} />
