@@ -2,17 +2,14 @@ import { useState } from "react";
 
 const STEPS = [
   {
-    emoji: "🎹",
     title: "Real-time posture coaching",
     body: "VisioNotes watches your hands and arms through your webcam while you play and flags technique issues as they happen — no wearables, no MIDI, just your camera.",
   },
   {
-    emoji: "🖐️",
     title: "What we detect",
     body: null, // custom content
   },
   {
-    emoji: "✅",
     title: "You're ready",
     body: "Start a session, play normally, and posture faults will appear live. After you stop, you'll get a full breakdown with a timeline you can scrub through.",
   },
@@ -88,7 +85,6 @@ export default function OnboardingModal({ onDone }) {
 
           {/* content */}
           <div>
-            <div style={{ fontSize: 36, lineHeight: 1, marginBottom: 14 }}>{s.emoji}</div>
             <h2 style={{ margin: "0 0 10px", fontSize: "1.25rem" }}>{s.title}</h2>
 
             {step === 1 ? (
