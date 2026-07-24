@@ -250,7 +250,6 @@ function LiveFeedbackLane({ lane, events, nowMs, windowStart, totalMs, active })
   return (
     <>
       <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
-        <InitialsBadge>{faultInitials(lane.fault_type, lane.hand)}</InitialsBadge>
         <span style={{
           color: active ? "var(--ink)" : "var(--ink-muted)",
           fontSize: 13,
@@ -284,10 +283,10 @@ function LiveFeedbackLane({ lane, events, nowMs, windowStart, totalMs, active })
           />
         ))}
         {events.map((event, index) => {
-          const eventStart = Math.max(event.timestamp_ms, windowStart);
-          const eventEnd = Math.min(event.timestamp_ms + (event.value || 0), nowMs || LIVE_WINDOW_MS);
-          const left = ((eventStart - windowStart) / windowDuration) * 100;
-          const width = Math.max(1.5, ((eventEnd - eventStart) / windowDuration) * 100);
+          // Use raw positions — container has overflow:hidden so pills clip naturally
+          // at the left edge instead of clamping (which made tails look stuck).
+          const left = ((event.timestamp_ms - windowStart) / windowDuration) * 100;
+          const width = Math.max(1.5, ((event.value || 0) / windowDuration) * 100);
           const isLatest = active && index === events.length - 1;
 
           return (
@@ -296,8 +295,8 @@ function LiveFeedbackLane({ lane, events, nowMs, windowStart, totalMs, active })
               title={`${faultLabel(event.fault_type, event.hand)}: ${formatLiveTime(event.value || 0)}`}
               style={{
                 position: "absolute",
-                left: `${Math.max(0, Math.min(100, left))}%`,
-                width: `${Math.max(1.5, Math.min(100, width))}%`,
+                left: `${left}%`,
+                width: `${width}%`,
                 top: 6,
                 bottom: 6,
                 borderRadius: 999,
