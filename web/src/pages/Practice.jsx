@@ -34,22 +34,33 @@ const FEEDBACK_LANES = [
 export default function Practice() {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
-  const [running, setRunning] = useState(false);
+  // phase: "idle" | "framing" | "running"
+  const [phase, setPhase] = useState("idle");
   const [saving, setSaving] = useState(false);
   const [liveFeedbackEnabled, setLiveFeedbackEnabled] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(() => !localStorage.getItem("vn-onboarded"));
   const sessionRef = useRef(null); // { id, startedAt }
-  const { isLoading, error, faults, liveEvents, start, stop } = useVision(
+  const { isLoading, error, faults, liveEvents, handsDetected, poseDetected, start, stop } = useVision(
     videoRef,
     canvasRef
   );
 
-  const handleStart = async () => {
+  // Step 1: open camera + start detection (no backend session yet)
+  const handleSetupCamera = async () => {
+    try {
+      await start();
+      setPhase("framing");
+    } catch (e) {
+      console.error("Failed to start camera:", e);
+    }
+  };
+
+  // Step 2: camera looks good — create the backend session and start recording
+  const handleConfirmFraming = async () => {
     try {
       const { session_id } = await startSession();
       sessionRef.current = { id: session_id, startedAt: Date.now() };
-      await start();
-      setRunning(true);
+      setPhase("running");
     } catch (e) {
       console.error("Failed to start session:", e);
     }
@@ -57,7 +68,7 @@ export default function Practice() {
 
   const handleStop = async () => {
     const { events, landmarkFrames } = stop();
-    setRunning(false);
+    setPhase("idle");
     setSaving(true);
 
     try {
@@ -77,47 +88,50 @@ export default function Practice() {
     }
   };
 
+  const running = phase === "running";
+  const framing = phase === "framing";
+
   return (
     <main style={{ padding: "32px 0" }}>
       {showOnboarding && <OnboardingModal onDone={() => setShowOnboarding(false)} />}
       <p className="vn-label" style={{ marginBottom: 6 }}>Live Session</p>
       <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 16, flexWrap: "wrap" }}>
         <h1 style={{ margin: 0 }}>Practice</h1>
-        <button
-          onClick={running ? handleStop : handleStart}
-          disabled={isLoading || saving}
-          className={`vn-btn ${running ? "vn-btn--stop" : "vn-btn--primary"}`}
-          style={{ cursor: isLoading || saving ? "wait" : undefined }}
-        >
-          {isLoading
-            ? "Loading models…"
-            : saving
-              ? "Saving…"
-              : running
-                ? "Stop"
-                : "Start Session"}
-        </button>
-        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.875rem", color: "var(--ink-muted)" }}>
-          <input
-            type="checkbox"
-            checked={liveFeedbackEnabled}
-            onChange={(event) => setLiveFeedbackEnabled(event.target.checked)}
-            className="vn-accent-control"
-            style={{ width: 16, height: 16, margin: 0 }}
-          />
-          Enable live feedback
-        </label>
+        {phase === "idle" && (
+          <button
+            onClick={handleSetupCamera}
+            disabled={isLoading || saving}
+            className="vn-btn vn-btn--primary"
+            style={{ cursor: isLoading || saving ? "wait" : undefined }}
+          >
+            {isLoading ? "Loading models…" : saving ? "Saving…" : "Start Session"}
+          </button>
+        )}
+        {running && (
+          <button onClick={handleStop} className="vn-btn vn-btn--stop">Stop</button>
+        )}
+        {(running || framing) && (
+          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.875rem", color: "var(--ink-muted)" }}>
+            <input
+              type="checkbox"
+              checked={liveFeedbackEnabled}
+              onChange={(e) => setLiveFeedbackEnabled(e.target.checked)}
+              className="vn-accent-control"
+              style={{ width: 16, height: 16, margin: 0 }}
+            />
+            Enable live feedback
+          </label>
+        )}
       </div>
 
       {error && (
         <p style={{ color: "var(--signal-deep)", fontWeight: 600 }}>{error}</p>
       )}
 
-      {liveFeedbackEnabled && (
+      {liveFeedbackEnabled && running && (
         <LiveFeedbackPanel running={running} events={liveEvents} />
       )}
 
-      {/* Live posture-fault feed (accessible WAI-ARIA listbox), shown during a session */}
       {running && (
         <section style={{ marginBottom: 16 }}>
           <p className="vn-label" style={{ marginBottom: 6 }}>Posture Faults</p>
@@ -144,14 +158,100 @@ export default function Practice() {
             transform: "scaleX(-1)",
           }}
         />
+        {framing && (
+          <FramingOverlay
+            handsDetected={handsDetected}
+            poseDetected={poseDetected}
+            onConfirm={handleConfirmFraming}
+          />
+        )}
       </div>
 
-      {!running && !isLoading && !saving && (
+      {phase === "idle" && !isLoading && !saving && (
         <p className="vn-muted" style={{ marginTop: 12 }}>
           Press <strong style={{ color: "var(--ink)" }}>Start Session</strong> to begin webcam posture tracking.
         </p>
       )}
     </main>
+  );
+}
+
+function FramingOverlay({ handsDetected, poseDetected, onConfirm }) {
+  const checks = [
+    {
+      label: "Hands visible",
+      ok: handsDetected,
+      tip: "Point camera at your hands from the side",
+    },
+    {
+      label: "Arm in frame",
+      ok: poseDetected,
+      tip: "Pull back so your elbow is visible",
+    },
+  ];
+
+  const allGood = handsDetected && poseDetected;
+
+  return (
+    <div style={{
+      position: "absolute",
+      inset: 0,
+      background: "rgba(0,0,0,0.62)",
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 16,
+      padding: 24,
+    }}>
+      <p style={{ color: "#fff", fontWeight: 600, fontSize: "0.9rem", margin: 0, letterSpacing: "0.04em", textTransform: "uppercase", opacity: 0.7 }}>
+        Camera Setup
+      </p>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%", maxWidth: 280 }}>
+        {checks.map(({ label, ok, tip }) => (
+          <div key={label} style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            background: ok ? "rgba(21,128,61,0.25)" : "rgba(0,0,0,0.35)",
+            border: `1px solid ${ok ? "rgba(21,128,61,0.6)" : "rgba(255,255,255,0.12)"}`,
+            borderRadius: 8,
+            padding: "10px 14px",
+            transition: "background 300ms, border-color 300ms",
+          }}>
+            <span style={{
+              width: 18,
+              height: 18,
+              borderRadius: "50%",
+              background: ok ? "#15803d" : "rgba(255,255,255,0.15)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              flexShrink: 0,
+              fontSize: 11,
+              color: "#fff",
+              transition: "background 300ms",
+            }}>
+              {ok ? "✓" : ""}
+            </span>
+            <div>
+              <div style={{ color: ok ? "#4ade80" : "#fff", fontSize: "0.85rem", fontWeight: 600 }}>{label}</div>
+              {!ok && <div style={{ color: "rgba(255,255,255,0.55)", fontSize: "0.78rem", marginTop: 1 }}>{tip}</div>}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <button
+        className="vn-btn vn-btn--primary"
+        onClick={onConfirm}
+        disabled={!allGood}
+        style={{ opacity: allGood ? 1 : 0.4, cursor: allGood ? "pointer" : "not-allowed", marginTop: 4 }}
+      >
+        {allGood ? "Start recording" : "Waiting for camera…"}
+      </button>
+    </div>
   );
 }
 

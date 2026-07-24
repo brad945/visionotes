@@ -35,6 +35,8 @@ export default function useVision(videoRef, canvasRef) {
   const [faults, setFaults] = useState([]); // current active fault labels
   const [liveEvents, setLiveEvents] = useState([]);
   const [stats, setStats] = useState({ fps: 0, width: 0, height: 0 });
+  const [handsDetected, setHandsDetected] = useState(false);
+  const [poseDetected, setPoseDetected] = useState(false);
 
   // Mutable refs that persist across renders without re-triggering them
   const handLandmarkerRef = useRef(null);
@@ -106,11 +108,14 @@ export default function useVision(videoRef, canvasRef) {
     lastTsRef.current = ts;
 
     const activeFaults = [];
+    let frameHandsDetected = false;
+    let framePoseDetected = false;
 
     // --- Hands ---
     try {
       const handResult = handLandmarkerRef.current.detectForVideo(video, ts);
       if (handResult.landmarks && handResult.handedness) {
+        frameHandsDetected = handResult.landmarks.length > 0;
         for (let i = 0; i < handResult.landmarks.length; i++) {
           const lm = handResult.landmarks[i];
           // handedness label from MediaPipe is the hand's own label (mirrored in selfie view)
@@ -142,6 +147,7 @@ export default function useVision(videoRef, canvasRef) {
     try {
       const poseResult = poseLandmarkerRef.current.detectForVideo(video, poseTs);
       if (poseResult.landmarks && poseResult.landmarks.length > 0) {
+        framePoseDetected = true;
         const body = poseResult.landmarks[0];
         const faultArms = new Set();
 
@@ -223,6 +229,8 @@ export default function useVision(videoRef, canvasRef) {
         ...armSmootherRef.current.snapshot(lastTsRef.current),
       ]);
       setStats({ fps, width: w, height: h });
+      setHandsDetected(frameHandsDetected);
+      setPoseDetected(framePoseDetected);
     }
     rafIdRef.current = requestAnimationFrame(detectLoop);
   }, [videoRef, canvasRef]);
@@ -298,5 +306,5 @@ export default function useVision(videoRef, canvasRef) {
     };
   }, []);
 
-  return { isLoading, error, faults, liveEvents, stats, start, stop };
+  return { isLoading, error, faults, liveEvents, stats, handsDetected, poseDetected, start, stop };
 }
