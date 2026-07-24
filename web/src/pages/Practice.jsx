@@ -180,8 +180,15 @@ export default function Practice() {
 }
 
 function PostureTip() {
-  const [dismissed, setDismissed] = useState(false);
-  if (dismissed) return null;
+  const [dismissing, setDismissing] = useState(false);
+  const [gone, setGone] = useState(false);
+
+  const handleDismiss = () => {
+    setDismissing(true);
+    setTimeout(() => setGone(true), 420);
+  };
+
+  if (gone) return null;
   return (
     <>
       <style>{`
@@ -191,13 +198,21 @@ function PostureTip() {
           80%  { transform: translate(2%, -2%) rotate(-1.5deg) scale(0.98); }
           100% { transform: translate(0, 0) rotate(-2deg) scale(1); opacity: 1; }
         }
-        .posture-card {
+        @keyframes postureCardOut {
+          0%   { transform: translate(0, 0) rotate(-2deg) scale(1); opacity: 1; }
+          100% { transform: translate(115%, -115%) rotate(42deg) scale(0.8); opacity: 0; }
+        }
+        .posture-card-in {
           animation: postureCardIn 0.65s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+          transform-origin: top right;
+        }
+        .posture-card-out {
+          animation: postureCardOut 0.4s cubic-bezier(0.55, 0, 1, 0.45) forwards;
           transform-origin: top right;
         }
       `}</style>
       <div
-        className="posture-card"
+        className={dismissing ? "posture-card-out" : "posture-card-in"}
         style={{
           position: "fixed",
           top: 80,
@@ -213,7 +228,7 @@ function PostureTip() {
         }}
       >
         <button
-          onClick={() => setDismissed(true)}
+          onClick={handleDismiss}
           aria-label="Dismiss"
           style={{
             position: "absolute",
