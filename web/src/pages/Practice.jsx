@@ -167,12 +167,76 @@ export default function Practice() {
         )}
       </div>
 
+      {framing && <PostureTip />}
+
       {phase === "idle" && !isLoading && !saving && (
         <p className="vn-muted" style={{ marginTop: 12 }}>
           Press <strong style={{ color: "var(--ink)" }}>Start Session</strong> to begin webcam posture tracking.
         </p>
       )}
     </main>
+  );
+}
+
+function PostureTip() {
+  const [dismissed, setDismissed] = useState(false);
+  if (dismissed) return null;
+  return (
+    <>
+      <style>{`
+        @keyframes postureCardIn {
+          0%   { transform: translate(110%, -110%) rotate(40deg) scale(0.4); opacity: 0; }
+          60%  { transform: translate(-6%, 4%) rotate(-4deg) scale(1.03); opacity: 1; }
+          80%  { transform: translate(2%, -2%) rotate(-1.5deg) scale(0.98); }
+          100% { transform: translate(0, 0) rotate(-2deg) scale(1); opacity: 1; }
+        }
+        .posture-card {
+          animation: postureCardIn 0.65s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+          transform-origin: top right;
+        }
+      `}</style>
+      <div
+        className="posture-card"
+        style={{
+          position: "fixed",
+          top: 80,
+          right: 24,
+          zIndex: 150,
+          width: 260,
+          background: "#fffde7",
+          border: "1.5px solid #e0c84a",
+          borderRadius: 10,
+          boxShadow: "0 8px 32px rgba(0,0,0,0.22), 0 2px 6px rgba(0,0,0,0.12)",
+          padding: "12px 12px 14px",
+          color: "#2a2200",
+        }}
+      >
+        <button
+          onClick={() => setDismissed(true)}
+          aria-label="Dismiss"
+          style={{
+            position: "absolute",
+            top: 7,
+            right: 9,
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            fontSize: 15,
+            color: "#7a6800",
+            lineHeight: 1,
+            padding: 2,
+          }}
+        >✕</button>
+        <img
+          src="/piano.jpeg"
+          alt="Correct vs wrong piano posture"
+          style={{ width: "100%", borderRadius: 6, display: "block", marginBottom: 10 }}
+        />
+        <p style={{ margin: 0, fontSize: "0.78rem", lineHeight: 1.5, fontWeight: 500, color: "#3a2e00" }}>
+          Try to mirror the <strong>right posture</strong> as much as possible!
+        </p>
+      </div>
+    </>
   );
 }
 
