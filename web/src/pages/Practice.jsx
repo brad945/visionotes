@@ -245,7 +245,7 @@ function FramingOverlay({ handsDetected, poseDetected, onConfirm }) {
     {
       label: "Hands visible",
       ok: handsDetected,
-      tip: "Point camera at your hands from the side",
+      tip: <>Point camera at your hands <strong>from the side</strong></>,
     },
     {
       label: "Arm in frame",
