@@ -185,8 +185,8 @@ function PostureTip() {
     <>
       <style>{`
         @keyframes postureCardIn {
-          0%   { transform: translate(110%, -110%) rotate(40deg) scale(0.4); opacity: 0; }
-          60%  { transform: translate(-6%, 4%) rotate(-4deg) scale(1.03); opacity: 1; }
+          0%   { transform: translate(110%, -110%) rotate(40deg) scale(1.6); opacity: 0; }
+          60%  { transform: translate(-6%, 4%) rotate(-4deg) scale(1.08); opacity: 1; }
           80%  { transform: translate(2%, -2%) rotate(-1.5deg) scale(0.98); }
           100% { transform: translate(0, 0) rotate(-2deg) scale(1); opacity: 1; }
         }
@@ -202,7 +202,7 @@ function PostureTip() {
           top: 80,
           right: 24,
           zIndex: 150,
-          width: 260,
+          width: 500,
           background: "#fffde7",
           border: "1.5px solid #e0c84a",
           borderRadius: 10,
