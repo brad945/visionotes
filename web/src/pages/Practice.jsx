@@ -202,7 +202,7 @@ function PostureTip() {
           top: 80,
           right: 24,
           zIndex: 150,
-          width: 500,
+          width: 580,
           background: "#fffde7",
           border: "1.5px solid #e0c84a",
           borderRadius: 10,
