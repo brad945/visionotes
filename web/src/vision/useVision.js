@@ -37,6 +37,7 @@ export default function useVision(videoRef, canvasRef) {
   const [stats, setStats] = useState({ fps: 0, width: 0, height: 0 });
   const [handsDetected, setHandsDetected] = useState(false);
   const [poseDetected, setPoseDetected] = useState(false);
+  const [shouldersDetected, setShouldersDetected] = useState(false);
   const [currentTs, setCurrentTs] = useState(0);
 
   // Mutable refs that persist across renders without re-triggering them
@@ -111,6 +112,7 @@ export default function useVision(videoRef, canvasRef) {
     const activeFaults = [];
     let frameHandsDetected = false;
     let framePoseDetected = false;
+    let frameShouldersDetected = false;
 
     // --- Hands ---
     try {
@@ -150,6 +152,9 @@ export default function useVision(videoRef, canvasRef) {
       if (poseResult.landmarks && poseResult.landmarks.length > 0) {
         framePoseDetected = true;
         const body = poseResult.landmarks[0];
+        const leftShoulder = body[11];
+        const rightShoulder = body[12];
+        frameShouldersDetected = (leftShoulder?.visibility ?? 0) > 0.5 || (rightShoulder?.visibility ?? 0) > 0.5;
         const faultArms = new Set();
 
         for (const side of ["left", "right"]) {
@@ -232,6 +237,7 @@ export default function useVision(videoRef, canvasRef) {
       setStats({ fps, width: w, height: h });
       setHandsDetected(frameHandsDetected);
       setPoseDetected(framePoseDetected);
+      setShouldersDetected(frameShouldersDetected);
       setCurrentTs(lastTsRef.current);
     }
     rafIdRef.current = requestAnimationFrame(detectLoop);
@@ -308,5 +314,5 @@ export default function useVision(videoRef, canvasRef) {
     };
   }, []);
 
-  return { isLoading, error, faults, liveEvents, stats, handsDetected, poseDetected, currentTs, start, stop };
+  return { isLoading, error, faults, liveEvents, stats, handsDetected, poseDetected, shouldersDetected, currentTs, start, stop };
 }

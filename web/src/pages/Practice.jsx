@@ -40,7 +40,7 @@ export default function Practice() {
   const [liveFeedbackEnabled, setLiveFeedbackEnabled] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(() => !localStorage.getItem("vn-onboarded"));
   const sessionRef = useRef(null); // { id, startedAt }
-  const { isLoading, error, faults, liveEvents, handsDetected, poseDetected, currentTs, start, stop } = useVision(
+  const { isLoading, error, faults, liveEvents, handsDetected, poseDetected, shouldersDetected, currentTs, start, stop } = useVision(
     videoRef,
     canvasRef
   );
@@ -162,6 +162,7 @@ export default function Practice() {
           <FramingOverlay
             handsDetected={handsDetected}
             poseDetected={poseDetected}
+            shouldersDetected={shouldersDetected}
             onConfirm={handleConfirmFraming}
           />
         )}
@@ -240,7 +241,7 @@ function PostureTip() {
   );
 }
 
-function FramingOverlay({ handsDetected, poseDetected, onConfirm }) {
+function FramingOverlay({ handsDetected, poseDetected, shouldersDetected, onConfirm }) {
   const checks = [
     {
       label: "Hands visible",
@@ -252,9 +253,14 @@ function FramingOverlay({ handsDetected, poseDetected, onConfirm }) {
       ok: poseDetected,
       tip: "Pull back so your elbow is visible",
     },
+    {
+      label: "Shoulders in frame",
+      ok: shouldersDetected,
+      tip: "Pull back further so at least one shoulder is visible",
+    },
   ];
 
-  const allGood = handsDetected && poseDetected;
+  const allGood = handsDetected && poseDetected && shouldersDetected;
 
   return (
     <div style={{
