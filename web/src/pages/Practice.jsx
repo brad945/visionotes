@@ -219,6 +219,7 @@ function PostureTip() {
           right: 24,
           zIndex: 150,
           width: 580,
+          willChange: "transform, opacity",
           background: "#fffde7",
           border: "1.5px solid #e0c84a",
           borderRadius: 10,
