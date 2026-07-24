@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import useVision from "../vision/useVision";
 import { startSession, endSession, postFaults, postLandmarks } from "../api";
 import FaultList from "../components/FaultList";
+import OnboardingModal from "../components/OnboardingModal";
 
 // Map the active fault label strings from useVision into the shape FaultList
 // expects. `id` is derived from the fault's identity (stable across frames) so
@@ -36,6 +37,7 @@ export default function Practice() {
   const [running, setRunning] = useState(false);
   const [saving, setSaving] = useState(false);
   const [liveFeedbackEnabled, setLiveFeedbackEnabled] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(() => !localStorage.getItem("vn-onboarded"));
   const sessionRef = useRef(null); // { id, startedAt }
   const { isLoading, error, faults, liveEvents, start, stop } = useVision(
     videoRef,
@@ -77,6 +79,7 @@ export default function Practice() {
 
   return (
     <main style={{ padding: "32px 0" }}>
+      {showOnboarding && <OnboardingModal onDone={() => setShowOnboarding(false)} />}
       <p className="vn-label" style={{ marginBottom: 6 }}>Live Session</p>
       <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 16, flexWrap: "wrap" }}>
         <h1 style={{ margin: 0 }}>Practice</h1>
