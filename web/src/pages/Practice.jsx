@@ -488,9 +488,9 @@ function LiveFeedbackLane({ lane, events, nowMs, windowStart, totalMs, active })
                 top: 6,
                 bottom: 6,
                 borderRadius: 999,
-                background: isLatest ? "var(--accent)" : "var(--ink)",
+                background: "var(--signal)",
                 opacity: isLatest ? 1 : 0.72,
-                boxShadow: isLatest ? "0 0 0 3px var(--accent-soft)" : "none",
+                boxShadow: isLatest ? "0 0 0 3px var(--signal-soft)" : "none",
                 transition: "left 180ms linear, width 180ms linear",
               }}
             />
