@@ -705,23 +705,23 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
       const accent = `rgba(${pal.accent},0.85)`;
       const isDark = themeRef.current !== "light";
 
-      // Returns a top→bottom linear gradient across a polygon's bounding box,
-      // giving the hand volume: lit highlight on the top edge, base fill in the
-      // middle, deep shadow on the bottom (ambient occlusion / underside).
-      function handGrad(c, poly) {
-        let minY = Infinity, maxY = -Infinity;
-        for (const [, py] of poly) { if (py < minY) minY = py; if (py > maxY) maxY = py; }
-        const g = c.createLinearGradient(0, minY, 0, maxY);
+      // Returns a top→bottom linear gradient across a GLOBAL bounding box shared
+      // by all hand parts — so forearm, palm, and every finger are all shaded by
+      // the same light, making the hand read as one unified solid rather than
+      // separate objects each with their own full highlight→shadow range.
+      // `globalMinY` / `globalMaxY` are computed after all polys are built (below).
+      function handGrad(c, globalMinY, globalMaxY) {
+        const g = c.createLinearGradient(0, globalMinY, 0, globalMaxY);
         if (isDark) {
-          g.addColorStop(0,    "#2e3f57"); // lit top (bounced skylight)
-          g.addColorStop(0.28, "#1e2c3f"); // upper-mid
-          g.addColorStop(0.6,  "#161d27"); // base colour
-          g.addColorStop(1,    "#09111a"); // shadowed underside
+          g.addColorStop(0,    "#3a5068"); // lit top (bounced skylight)
+          g.addColorStop(0.3,  "#243549"); // upper-mid
+          g.addColorStop(0.65, "#161d27"); // base colour
+          g.addColorStop(1,    "#07101a"); // shadowed underside
         } else {
-          g.addColorStop(0,    "#eef3f6"); // lit top
-          g.addColorStop(0.28, "#e6ecf0"); // upper-mid
-          g.addColorStop(0.6,  "#dfe6e9"); // base colour
-          g.addColorStop(1,    "#c4cfd5"); // shadowed underside
+          g.addColorStop(0,    "#f0f5f7"); // lit top
+          g.addColorStop(0.3,  "#e8eef2"); // upper-mid
+          g.addColorStop(0.65, "#dde5e9"); // base colour
+          g.addColorStop(1,    "#bfcdd4"); // shadowed underside
         }
         return g;
       }
@@ -1079,9 +1079,19 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
         handCtx.globalAlpha = 1;
         ctx = handCtx;
       }
+      // Compute the global bounding box across ALL hand polygons so every part
+      // shares the same gradient range — one unified light source, no seams.
+      let gMinY = Infinity, gMaxY = -Infinity;
+      for (const poly of [...bodyPolys, ...fingerJobs.map((j) => j.poly)]) {
+        for (const [, py] of poly) {
+          if (py < gMinY) gMinY = py;
+          if (py > gMaxY) gMaxY = py;
+        }
+      }
+
       // 1) FOREARM — always drawn solid (forearm = bodyPolys[0]; palm = bodyPolys[1]). The
       //    thumbs-up gets its OWN fill (below) so the arm + hand match and overlap solidly.
-      ctx.fillStyle = handGrad(ctx, bodyPolys[0]);
+      ctx.fillStyle = handGrad(ctx, gMinY, gMaxY);
       pathPoly(ctx, bodyPolys[0]);
       ctx.fill();
       ctx.fillStyle = dot;
@@ -1181,7 +1191,7 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
       } else {
         morphSrc = null;
         // 2) palm — fill + outline (suppress the forearm⇄palm seam)
-        ctx.fillStyle = handGrad(ctx, bodyPolys[1]);
+        ctx.fillStyle = handGrad(ctx, gMinY, gMaxY);
         pathPoly(ctx, bodyPolys[1]);
         ctx.fill();
         ctx.fillStyle = dot;
@@ -1190,7 +1200,7 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
         // 3) fingers, back→front: fill THEN outline (later fills occlude earlier outlines).
         for (let fi = 0; fi < fingerJobs.length; fi++) {
           const job = fingerJobs[fi];
-          ctx.fillStyle = handGrad(ctx, job.poly);
+          ctx.fillStyle = handGrad(ctx, gMinY, gMaxY);
           pathPoly(ctx, job.poly);
           ctx.fill();
           if (SHOW_JOINT_DOTS) {
@@ -1218,7 +1228,7 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
         //    the index then comes solely from the uniform offscreen buffer (no overlap patch).
         const idxJob = (overButton || front > 0.05) ? fingerJobs[3] : null;
         if (idxJob) {
-          fgCtx.fillStyle = handGrad(fgCtx, idxJob.poly);
+          fgCtx.fillStyle = handGrad(fgCtx, gMinY, gMaxY);
           pathPoly(fgCtx, idxJob.poly);
           fgCtx.fill();
           fgCtx.fillStyle = dot;
