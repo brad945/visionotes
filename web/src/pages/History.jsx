@@ -106,7 +106,23 @@ export default function History() {
       )}
 
       {sessions.length === 0 ? (
-        <p className="vn-muted">No sessions yet. Go to <Link to="/">Practice</Link> to start one.</p>
+        <div style={{
+          marginTop: 40,
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          gap: 12,
+          padding: "48px 32px",
+          border: "1px dashed var(--line-strong)",
+          borderRadius: "var(--r-xl)",
+          textAlign: "center",
+        }}>
+          <p style={{ margin: 0, fontWeight: 600, fontSize: "1.05rem", color: "var(--ink)" }}>No sessions yet</p>
+          <p style={{ margin: 0, color: "var(--ink-muted)", fontSize: "0.9rem", maxWidth: 320, lineHeight: 1.6 }}>
+            Complete a practice session and it will appear here with a full fault breakdown.
+          </p>
+          <Link to="/" className="vn-btn vn-btn--primary" style={{ marginTop: 4 }}>Start your first session</Link>
+        </div>
       ) : (
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.95rem" }}>
           <thead>

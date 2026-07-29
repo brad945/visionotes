@@ -183,6 +183,29 @@ export default function Visualize() {
   if (loading) return <main style={{ padding: "32px 0" }} className="vn-muted">Loading growth data...</main>;
   if (error) return <main style={{ padding: "32px 0", color: "var(--signal-deep)" }}>Error: {error}</main>;
 
+  if (sessions.length === 0) return (
+    <main style={{ padding: "32px 0" }}>
+      <p className="vn-label" style={{ marginBottom: 6 }}>Growth</p>
+      <h1 style={{ margin: "0 0 40px" }}>Visualize Growth</h1>
+      <div style={{
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        gap: 12,
+        padding: "48px 32px",
+        border: "1px dashed var(--line-strong)",
+        borderRadius: "var(--r-xl)",
+        textAlign: "center",
+      }}>
+        <p style={{ margin: 0, fontWeight: 600, fontSize: "1.05rem", color: "var(--ink)" }}>Nothing to visualize yet</p>
+        <p style={{ margin: 0, color: "var(--ink-muted)", fontSize: "0.9rem", maxWidth: 340, lineHeight: 1.6 }}>
+          Record at least one session and your fault trends will appear here as a chart you can scrub through.
+        </p>
+        <Link to="/" className="vn-btn vn-btn--primary" style={{ marginTop: 4 }}>Start your first session</Link>
+      </div>
+    </main>
+  );
+
   return (
     <main style={{ padding: "32px 0" }}>
       <p className="vn-label" style={{ marginBottom: 6 }}>Growth</p>
