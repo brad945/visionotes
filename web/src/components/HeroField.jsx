@@ -414,6 +414,10 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
     let armLift = 0; // eased: the whole hand pivots up at the elbow to reach high cursors
     let lungeX = 0, lungeY = 0; // eased translation of the whole model toward the Send button
     let pianoX = 0, pianoY = 0; // eased model offset for the idle piano (lateral run + wrist dip)
+    let songFade = 0; // eased 0→1 as a song starts/stops — cross-fades the keyboard
+    //                   and the playing pose. Without it the keyboard would blink in
+    //                   and out in a single frame on play/pause and at every song
+    //                   boundary, while everything else on the rig eases.
     let wristHinge = 0; // eased wrist-joint rotation (hand hinges relative to the forearm)
     let lastIdxTip = null; // index fingertip (canvas px) from the previous frame
     let clickT = -1e9; // timestamp of the last Send-link click (for the index press tap)
@@ -556,6 +560,7 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
       // off the AudioContext so each strike lands on the note you actually hear.
       const songActive = songBus.active && !!songBus.strikeTimes;
       const songT = songActive ? songBus.getTime() : 0;
+      songFade += ((songActive ? 1 : 0) - songFade) * 0.08;
 
       // While a song plays the hand must stay over its keyboard, so the hover-lunge
       // is suppressed — otherwise moving the cursor onto Send mid-piece would drag
@@ -594,10 +599,10 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
       if (!cursorLeft) { leftAt = -1; lastLc = lc; } // in the tracking zone → reset + remember pose
       else if (leftAt < 0) leftAt = now; // just crossed left → start the grace timer
       const spatialGate = !lc ? 0 : cursorLeft ? 1 - smoothstep(LEFT_DELAY, LEFT_DELAY + LEFT_FADE, now - leftAt) : 1;
-      // A playing song takes the hand over completely: zeroing `front` stops the
-      // fingers chasing the cursor and stops the arm-lift, exactly as going idle
-      // does today — so the hand holds its playing posture over the keys.
-      const front = songActive ? 0 : spatialGate * idleActive;
+      // A playing song takes the hand over: fading `front` out stops the fingers
+      // chasing the cursor and stops the arm-lift, exactly as going idle does
+      // today — so the hand eases into its playing posture over the keys.
+      const front = (1 - songFade) * spatialGate * idleActive;
       // While the cursor is LEFT of the line, STOP tracking it — aim at the LAST in-zone
       // position so the hand HOLDS that pose (then `front` fades it into the piano).
       const aimLc = cursorLeft && lastLc ? lastLc : lc;
@@ -621,11 +626,11 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
       // source is either the looping idle PIANO_PHRASE or, when the player is
       // running, the current song — both reduce to the same {t, f, lat} events, so
       // everything downstream (strike curl, key press, keyboard fade) is untouched.
-      // The morph factor is preserved in BOTH branches: the thumbs-up must still
-      // win over a playing song, or the two animations fight each other.
-      const pianoGate = songActive
-        ? (inMorphSeq ? 0 : 1)
-        : (1 - idleActive) * (inMorphSeq ? 0 : 1);
+      // Whichever wants the keyboard more — a playing song or the idle timeout —
+      // wins, so play/pause and every song boundary cross-fade instead of blinking
+      // (the keyboard is drawn at globalAlpha = pianoGate). The morph factor is
+      // preserved so the thumbs-up still beats a playing song.
+      const pianoGate = Math.max(songFade, 1 - idleActive) * (inMorphSeq ? 0 : 1);
       const handFrozen = inMorphSeq; // freeze the hand pose so the dots hold + resume cleanly
       const phraseT = (t * PIANO_BPS) % PIANO_PHRASE_BEATS;
       const pianoFlexArr = [0, 0, 0, 0, 0];
