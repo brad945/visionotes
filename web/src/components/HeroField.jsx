@@ -1198,7 +1198,11 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
         outline(ctx, bodyPolys[1], [bodyPolys[0]], 111.3);
 
         // 3) fingers, back→front: fill THEN outline (later fills occlude earlier outlines).
+        // fi===3 is the index finger — skip it in the handCtx pass when it will be
+        // drawn on fgCtx instead, otherwise it gets double-composited and looks darker.
+        const willFgIndex = overButton || front > 0.05;
         for (let fi = 0; fi < fingerJobs.length; fi++) {
+          if (fi === 3 && willFgIndex) continue;
           const job = fingerJobs[fi];
           ctx.fillStyle = handGrad(ctx, gMinY, gMaxY);
           pathPoly(ctx, job.poly);
