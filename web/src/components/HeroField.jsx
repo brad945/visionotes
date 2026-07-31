@@ -1,5 +1,6 @@
 import { useRef, useEffect, useState } from "react";
 import { useTheme } from "../theme/ThemeProvider";
+import { songBus } from "../audio/songBus";
 import "./HeroField.css";
 
 // Theme-aware particle palettes (rgb triples used in rgba()).
@@ -132,6 +133,19 @@ const pianoStrike = (i, phraseT) => {
   }
   const dtBeats = recent < 0 ? phraseT + (PIANO_PHRASE_BEATS - times[times.length - 1]) : phraseT - recent;
   return pianoEnv(dtBeats / PIANO_BPS);
+};
+// Same strike envelope as pianoStrike, but for a PLAYED SONG: times are already
+// in seconds (no beat conversion) and the timeline runs once instead of looping,
+// so there's no wrap-around — before the first strike a finger is simply at rest.
+const songStrike = (times, tSec) => {
+  if (!times || !times.length) return 0;
+  let recent = -1;
+  for (const tt of times) {
+    if (tt <= tSec) recent = tt;
+    else break;
+  }
+  if (recent < 0) return 0;
+  return pianoEnv(tSec - recent);
 };
 const FINGER_MIN = -104 * DEG; // anatomical clamp on the FINAL base angle (down)
 const FINGER_MAX = 14 * DEG; // anatomical clamp (up) — no wrist hyperextension
@@ -537,7 +551,16 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
         const pxc = mouseX + cr.left, pyc = mouseY + cr.top;
         return pxc >= br.left && pxc <= br.right && pyc >= br.top && pyc <= br.bottom;
       };
-      const overButton = overEl(".login-send-btn") || overEl(".vn-theme-toggle");
+      // Song mode: the piano player is playing a piece. Sampled ONCE per frame so
+      // every consumer below sees a consistent value, and the clock is read live
+      // off the AudioContext so each strike lands on the note you actually hear.
+      const songActive = songBus.active && !!songBus.strikeTimes;
+      const songT = songActive ? songBus.getTime() : 0;
+
+      // While a song plays the hand must stay over its keyboard, so the hover-lunge
+      // is suppressed — otherwise moving the cursor onto Send mid-piece would drag
+      // the whole model off the keys.
+      const overButton = !songActive && (overEl(".login-send-btn") || overEl(".vn-theme-toggle"));
       if (inMorphSeq) {
         // FREEZE the lunge during the morph so the live forearm stays glued to the snapshotted
         // (possibly lunged) hand — otherwise the arm eases home and detaches at the wrist.
@@ -571,7 +594,10 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
       if (!cursorLeft) { leftAt = -1; lastLc = lc; } // in the tracking zone → reset + remember pose
       else if (leftAt < 0) leftAt = now; // just crossed left → start the grace timer
       const spatialGate = !lc ? 0 : cursorLeft ? 1 - smoothstep(LEFT_DELAY, LEFT_DELAY + LEFT_FADE, now - leftAt) : 1;
-      const front = spatialGate * idleActive;
+      // A playing song takes the hand over completely: zeroing `front` stops the
+      // fingers chasing the cursor and stops the arm-lift, exactly as going idle
+      // does today — so the hand holds its playing posture over the keys.
+      const front = songActive ? 0 : spatialGate * idleActive;
       // While the cursor is LEFT of the line, STOP tracking it — aim at the LAST in-zone
       // position so the hand HOLDS that pose (then `front` fades it into the piano).
       const aimLc = cursorLeft && lastLc ? lastLc : lc;
@@ -590,25 +616,48 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
         else morph = 0; // pause on the hand
       }
 
-      // Idle piano: run the phrase, dip the wrist on strikes (weight) and drift the
-      // arm laterally toward the most-recent note (so it "follows" the run).
-      const pianoGate = (1 - idleActive) * (inMorphSeq ? 0 : 1); // off during the whole morph
+      // Piano mode: run a phrase, dip the wrist on strikes (weight) and drift the
+      // arm laterally toward the most-recent note (so it "follows" the run). The
+      // source is either the looping idle PIANO_PHRASE or, when the player is
+      // running, the current song — both reduce to the same {t, f, lat} events, so
+      // everything downstream (strike curl, key press, keyboard fade) is untouched.
+      // The morph factor is preserved in BOTH branches: the thumbs-up must still
+      // win over a playing song, or the two animations fight each other.
+      const pianoGate = songActive
+        ? (inMorphSeq ? 0 : 1)
+        : (1 - idleActive) * (inMorphSeq ? 0 : 1);
       const handFrozen = inMorphSeq; // freeze the hand pose so the dots hold + resume cleanly
       const phraseT = (t * PIANO_BPS) % PIANO_PHRASE_BEATS;
       const pianoFlexArr = [0, 0, 0, 0, 0];
       let hingeTarget = 0;
       if (pianoGate > 0.01) {
         let strkSum = 0;
-        let recentEv = PIANO_PHRASE[PIANO_PHRASE.length - 1];
-        for (const ev of PIANO_PHRASE) {
-          if (ev.t <= phraseT) recentEv = ev;
-          else break;
+        let latTarget = 0;
+        if (songActive) {
+          const evs = songBus.events;
+          let recentEv = null;
+          for (const ev of evs) {
+            if (ev.t <= songT) recentEv = ev;
+            else break;
+          }
+          latTarget = recentEv ? recentEv.lat : 0;
+          for (let si = 0; si < 5; si++) {
+            pianoFlexArr[si] = songStrike(songBus.strikeTimes[si], songT);
+            strkSum += pianoFlexArr[si];
+          }
+        } else {
+          let recentEv = PIANO_PHRASE[PIANO_PHRASE.length - 1];
+          for (const ev of PIANO_PHRASE) {
+            if (ev.t <= phraseT) recentEv = ev;
+            else break;
+          }
+          latTarget = recentEv.lat;
+          for (let si = 0; si < 5; si++) {
+            pianoFlexArr[si] = pianoStrike(si, phraseT);
+            strkSum += pianoFlexArr[si];
+          }
         }
-        for (let si = 0; si < 5; si++) {
-          pianoFlexArr[si] = pianoStrike(si, phraseT);
-          strkSum += pianoFlexArr[si];
-        }
-        pianoX += (recentEv.lat * PIANO_SHIFT * pianoGate - pianoX) * 0.07;
+        pianoX += (latTarget * PIANO_SHIFT * pianoGate - pianoX) * 0.07;
         pianoY += (Math.min(strkSum, 1.6) * PIANO_DROP * pianoGate - pianoY) * 0.3;
         // wrist hinges: a slow undulation + a flex DOWN on each strike (weight).
         hingeTarget = (Math.sin(t * 0.4) * WRIST_SWAY - Math.min(strkSum, 1.5) * WRIST_FLEX) * pianoGate;

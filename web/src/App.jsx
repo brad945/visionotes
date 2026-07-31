@@ -3,6 +3,7 @@ import { useAuth } from "./auth/AuthProvider";
 import { useTheme } from "./theme/ThemeProvider";
 import Navbar from "./components/Navbar";
 import HeroField from "./components/HeroField";
+import PianoPlayer from "./components/PianoPlayer";
 import ThemeToggle from "./components/ThemeToggle";
 import Login from "./pages/Login";
 import Practice from "./pages/Practice";
@@ -57,6 +58,11 @@ export default function App() {
         </div>
         <div style={{ position: "relative", zIndex: 2, marginTop: 132, padding: "0 16px", transform: "translateX(605px)" }}>
           <Login splash={dark} />
+        </div>
+        {/* zIndex 7 puts the player above the fg (index-finger) canvas at 6, so the
+            controls are never obscured by the hand reaching across. */}
+        <div style={{ position: "absolute", left: 32, bottom: 32, zIndex: 7 }}>
+          <PianoPlayer />
         </div>
       </div>
     );
