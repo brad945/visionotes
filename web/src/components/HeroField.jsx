@@ -1198,11 +1198,7 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
         outline(ctx, bodyPolys[1], [bodyPolys[0]], 111.3);
 
         // 3) fingers, back→front: fill THEN outline (later fills occlude earlier outlines).
-        // fi===3 is the index finger — skip it in the handCtx pass when it will be
-        // drawn on fgCtx instead, otherwise it gets double-composited and looks darker.
-        const willFgIndex = overButton || front > 0.05;
         for (let fi = 0; fi < fingerJobs.length; fi++) {
-          if (fi === 3 && willFgIndex) continue;
           const job = fingerJobs[fi];
           ctx.fillStyle = handGrad(ctx, gMinY, gMaxY);
           pathPoly(ctx, job.poly);
@@ -1278,6 +1274,19 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
         bgCtx.globalAlpha = MODEL_ALPHA;
         bgCtx.drawImage(handCanvas, 0, 0);
         bgCtx.restore();
+
+        // Punch the index finger out of bgCtx when it will be drawn on fgCtx —
+        // otherwise the index gets double-composited (bg + fg both at MODEL_ALPHA)
+        // and looks darker / more opaque than every other finger.
+        if (idxJob) {
+          bgCtx.save();
+          bgCtx.globalCompositeOperation = "destination-out";
+          bgCtx.globalAlpha = 1;
+          pathPoly(bgCtx, idxJob.poly);
+          bgCtx.fill();
+          bgCtx.restore();
+        }
+
         ctx = bgCtx;
       }
 
