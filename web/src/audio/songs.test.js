@@ -150,12 +150,30 @@ describe("compileSong", () => {
     });
   }
 
-  it("keeps a hand on the keys almost continuously in the chordal pieces", () => {
-    // Canon and Ode carry the block chords; if the hand is idle for most of
-    // either, the left-hand conceit has stopped working.
-    for (const id of ["canon-in-d", "ode-to-joy"]) {
-      const c = compileSong(SONGS.find((s) => s.id === id));
-      expect(coverage(c)).toBeGreaterThan(0.6);
+  it("still grips a chord correctly if a chordal piece is added back", () => {
+    // Canon in D and Ode to Joy were removed for being unconvincing on screen,
+    // which left compileSong's simultaneous-note handling with no song to
+    // exercise it. Keep it covered with a fixture so it can't rot: one finger
+    // may never take two keys, and a left hand grips low-note-outward.
+    const fixture = {
+      id: "fixture",
+      title: "fixture",
+      composer: "test",
+      step: 0.5,
+      notes: [
+        [0, 43, 2, "L"], [0, 47, 2, "L"], [0, 50, 2, "L"], // G major triad
+        [0, 67, 2, "R"],
+        [2, 45, 2, "L"], [2, 48, 2, "L"], [2, 52, 2, "L"], // A minor triad
+        [2, 69, 2, "R"],
+      ],
+    };
+    const c = compileSong(fixture);
+    for (const g of groupsOf(c)) {
+      expect(new Set(g.map((n) => n.finger)).size).toBe(g.length);
+      const byPitch = [...g].sort((a, b) => a.midi - b.midi);
+      for (let i = 1; i < byPitch.length; i++) {
+        expect(byPitch[i].finger).toBeLessThan(byPitch[i - 1].finger);
+      }
     }
   });
 
@@ -176,11 +194,15 @@ describe("compileSong", () => {
     }
   });
 
-  it("plays real chords, not just a single line", () => {
-    const chordy = SONGS.filter((s) =>
-      compileSong(s).events.some((e) => e.f.length >= 3),
-    );
-    expect(chordy.length).toBeGreaterThanOrEqual(2);
+  it("ships only pieces whose left hand is one note at a time", () => {
+    // Deliberate: block chords never read on screen at the tuned camera angle,
+    // so the shipped repertoire is arpeggiated. If a chordal piece is added
+    // back, this is the test to delete — knowingly, not by accident.
+    for (const song of SONGS) {
+      for (const ev of compileSong(song).events) {
+        expect(ev.f.length).toBe(1);
+      }
+    }
   });
 
   it("keeps the left hand below the melody", () => {
