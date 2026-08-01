@@ -968,11 +968,30 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
         // unaffected by tilt/scale. Tilt + uniform scale share the fixed pivot (pcx,pcy) so they
         // commute and the keyboard never drifts. Yaw is NOT here — it lives inside proj() as the
         // metric ground-plane rotation before the homography.
+        const kbTilt = 0.2 - 9 * DEG + k.tiltDeg * DEG; // baseline tilt (+ = CW) plus the panel delta
         bgCtx.translate(k.posX, k.posY);
         bgCtx.translate(pcx, pcy);
-        bgCtx.rotate(0.2 - 9 * DEG + k.tiltDeg * DEG); // baseline tilt (+ = CW) plus the panel delta
+        bgCtx.rotate(kbTilt);
         bgCtx.scale(k.scale, k.scale);
         bgCtx.translate(-pcx, -pcy);
+        // Replay that same rigid transform by hand, so key geometry can be compared
+        // against the fingertips. The keys are drawn INSIDE the transform above, but
+        // the fingertips live in plain canvas space — so hit-testing a fingertip's raw
+        // x against an untransformed key slot compares two different coordinate
+        // systems. At scale 3 and posX 800 the key that "matched" a fingertip was
+        // rendered somewhere else entirely (off-screen, in practice), so NO key ever
+        // visibly went down while the hand played: the piano looked dead against the
+        // audio. Order matters — canvas post-multiplies, so a point is scaled about
+        // the pivot, then rotated, then offset.
+        const kbCos = Math.cos(kbTilt), kbSin = Math.sin(kbTilt);
+        const toScreen = (p) => {
+          const sx = (p[0] - pcx) * k.scale;
+          const sy = (p[1] - pcy) * k.scale;
+          return [
+            k.posX + pcx + sx * kbCos - sy * kbSin,
+            k.posY + pcy + sx * kbSin + sy * kbCos,
+          ];
+        };
         // Each key is drawn as a SOLID extruded block = body (silhouette) + top cap + front lip.
         // The body is the convex hull of the 8 box corners (4 top + 4 dropped straight down by
         // faceH). Because adjacent keys share their boundary corners exactly, neighbouring bodies
@@ -1003,17 +1022,22 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
         for (let k = -EXT_L; k < nWhite + EXT_R; k++) {
           const x = kbLeft + k * wKeyW;
           const x2 = x + wKeyW;
-          let press = 0;
-          // Hit-test the fingertip against this key slot directly. There used to be a
-          // mirror here (reflecting tp.x about the keyboard's centre); it dated from
-          // when the keyboard was drawn in its original placement, BEFORE the tuning
-          // panel gave it posX/scale/yaw. Once the keyboard moved, the mirror was
-          // never revisited and it inverted every press: an ascending run lit keys
-          // travelling left. Don't reintroduce it.
-          for (const tp of tips) if (tp.x >= x && tp.x < x2 && tp.s > press) press = tp.s;
-          const dy = press * 0.05 * unit; // pressed key tilts DOWN at the front (pivots at the back)
           const nl = proj(x, 0), nr = proj(x2, 0); // near (front) edge — yawed
           const fl = proj(x, 1), fr = proj(x2, 1); // far (back) edge — yawed
+          // A key goes down when a striking fingertip is inside the quad this key is
+          // actually DRAWN as — tested in screen space, where the viewer sees both.
+          // Use the UNPRESSED quad so a sinking key can't feed back into its own
+          // hit-test. This is what makes the piano respond to the hand at all, and it
+          // stays correct at whatever posX/scale/tilt/yaw the tuning panel dials in,
+          // instead of needing a fudge factor per tuning. (An earlier version mirrored
+          // the fingertip x about the keyboard's centre — a leftover from before the
+          // keyboard was transformed at all. Don't reintroduce that.)
+          let press = 0;
+          const cap = [toScreen(nl), toScreen(nr), toScreen(fr), toScreen(fl)];
+          for (const tp of tips) {
+            if (tp.s > press && pointInPoly(tp.x, tp.y, cap)) press = tp.s;
+          }
+          const dy = press * 0.05 * unit; // pressed key tilts DOWN at the front (pivots at the back)
           const A = [nl[0], nl[1] + dy], B = [nr[0], nr[1] + dy]; // top corners: near sinks on press
           const C = [fr[0], fr[1]], D = [fl[0], fl[1]];           // far edge fixed
           const Ad = [A[0], A[1] + faceH], Bd = [B[0], B[1] + faceH]; // straight-down extrusions (key thickness)
@@ -1455,3 +1479,4 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
     </>
   );
 }
+
