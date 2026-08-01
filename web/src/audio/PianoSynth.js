@@ -43,8 +43,21 @@ export default class PianoSynth {
       if (!AC) return null;
       this.ctx = new AC();
       this.master = this.ctx.createGain();
-      this.master.gain.value = 0.18; // conservative — this plays on a login page
-      this.master.connect(this.ctx.destination);
+      this.master.gain.value = 0.16; // conservative — this plays on a login page
+
+      // Chords stack: a 3-note left-hand chord over a ringing bass and a melody
+      // note can sum past 1.0, and the destination hard-clips into audible
+      // distortion. A limiter on the way out keeps dense passages clean without
+      // having to tune the gain down until quiet passages disappear.
+      const limiter = this.ctx.createDynamicsCompressor();
+      limiter.threshold.value = -8;
+      limiter.knee.value = 0;
+      limiter.ratio.value = 12;
+      limiter.attack.value = 0.003;
+      limiter.release.value = 0.25;
+
+      this.master.connect(limiter);
+      limiter.connect(this.ctx.destination);
     }
     if (this.ctx.state === "suspended") this.ctx.resume();
     return this.ctx;
