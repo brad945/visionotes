@@ -134,18 +134,32 @@ const pianoStrike = (i, phraseT) => {
   const dtBeats = recent < 0 ? phraseT + (PIANO_PHRASE_BEATS - times[times.length - 1]) : phraseT - recent;
   return pianoEnv(dtBeats / PIANO_BPS);
 };
-// Same strike envelope as pianoStrike, but for a PLAYED SONG: times are already
-// in seconds (no beat conversion) and the timeline runs once instead of looping,
-// so there's no wrap-around — before the first strike a finger is simply at rest.
-const songStrike = (times, tSec) => {
-  if (!times || !times.length) return 0;
-  let recent = -1;
-  for (const tt of times) {
-    if (tt <= tSec) recent = tt;
+// Strike envelope for a PLAYED SONG. Unlike pianoEnv — a fixed 0.28s triangle,
+// which fits the idle phrase because its notes come every ~0.29s — a real piece
+// holds notes. A finger must therefore stay DOWN for as long as its note sounds:
+// with a fixed blip the hand twitches for a quarter second and then sits frozen
+// while you can still hear the chord ringing, which reads as the animation being
+// out of sync with the audio. Press, settle under the weight, then lift.
+// Spans are [onset, heldFor] in seconds; the timeline runs once, so before the
+// first strike a finger is simply at rest (no wrap-around).
+const SONG_PRESS = 0.05; // time to push the key down
+const SONG_LIFT = 0.16; // time to come back off it
+const SONG_SETTLE = 0.35; // how quickly a held finger relaxes to its resting weight
+const songLevel = (dt) => 1 - 0.25 * Math.min(1, Math.max(0, dt - SONG_PRESS) / SONG_SETTLE);
+const songStrike = (spans, tSec) => {
+  if (!spans || !spans.length) return 0;
+  let recent = null;
+  for (const s of spans) {
+    if (s[0] <= tSec) recent = s;
     else break;
   }
-  if (recent < 0) return 0;
-  return pianoEnv(tSec - recent);
+  if (!recent) return 0;
+  const dt = tSec - recent[0];
+  const held = recent[1];
+  if (dt < SONG_PRESS) return dt / SONG_PRESS; // pressing down
+  if (dt < held) return songLevel(dt); // holding the key while it sounds
+  const rel = dt - held;
+  return rel < SONG_LIFT ? songLevel(held) * (1 - rel / SONG_LIFT) : 0; // lifting off
 };
 const FINGER_MIN = -104 * DEG; // anatomical clamp on the FINAL base angle (down)
 const FINGER_MAX = 14 * DEG; // anatomical clamp (up) — no wrist hyperextension
@@ -558,7 +572,7 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
       // Song mode: the piano player is playing a piece. Sampled ONCE per frame so
       // every consumer below sees a consistent value, and the clock is read live
       // off the AudioContext so each strike lands on the note you actually hear.
-      const songActive = songBus.active && !!songBus.strikeTimes;
+      const songActive = songBus.active && !!songBus.strikeSpans;
       const songT = songActive ? songBus.getTime() : 0;
       songFade += ((songActive ? 1 : 0) - songFade) * 0.08;
 
@@ -647,7 +661,7 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
           }
           latTarget = recentEv ? recentEv.lat : 0;
           for (let si = 0; si < 5; si++) {
-            pianoFlexArr[si] = songStrike(songBus.strikeTimes[si], songT);
+            pianoFlexArr[si] = songStrike(songBus.strikeSpans[si], songT);
             strkSum += pianoFlexArr[si];
           }
         } else {

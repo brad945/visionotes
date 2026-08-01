@@ -73,7 +73,7 @@ export default function PianoPlayer() {
     tr.playing = true;
     tr.nextNote = compiled.notes.findIndex((n) => n.t >= seconds);
     if (tr.nextNote < 0) tr.nextNote = compiled.notes.length;
-    setSongSource(compiled.events, compiled.strikeTimes, () => getTime.current());
+    setSongSource(compiled.events, compiled.strikeSpans, () => getTime.current());
     setPlaying(true);
   }
 
@@ -153,10 +153,22 @@ export default function PianoPlayer() {
   }, [playing, compiled, songIdx]);
 
   // Tear down the audio context and hand the canvas back to its idle phrase.
+  //
+  // The `pagehide` listener matters on its own: React's unmount cleanup is not
+  // guaranteed to run when the page is navigated away or reloaded, and notes are
+  // queued on the audio clock up to LOOKAHEAD_S ahead with tails that ring for
+  // seconds after that. Without this, a reload can leave the old page's audio
+  // graph sounding. pagehide (not beforeunload) is the event that also fires on
+  // mobile and when the page enters the back/forward cache.
   useEffect(() => {
-    return () => {
+    const kill = () => {
       clearSongSource();
       synth.close();
+    };
+    window.addEventListener("pagehide", kill);
+    return () => {
+      window.removeEventListener("pagehide", kill);
+      kill();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

@@ -1,6 +1,32 @@
 import { describe, it, expect } from "vitest";
 import { SONGS, compileSong } from "./songs";
 
+// Fraction of the piece during which at least one finger is on a key. This is
+// the number that broke: with onset-only strikes the hand blipped for ~0.28s
+// every ~0.8s, so it sat frozen ~70% of the time while the melody played on.
+function coverage(c) {
+  const spans = c.strikeSpans.flat().sort((a, b) => a[0] - b[0]);
+  let covered = 0;
+  let end = -1;
+  for (const [t, dur] of spans) {
+    const stop = t + dur;
+    if (t > end) {
+      covered += dur;
+      end = stop;
+    } else if (stop > end) {
+      covered += stop - end;
+      end = stop;
+    }
+  }
+  return covered / c.duration;
+}
+
+// events carry fingers, not pitches — recover the pitch for a solo event
+function midiOf(compiled, ev) {
+  const n = compiled.notes.find((x) => x.hand === "L" && Math.abs(x.t - ev.t) < 1e-9);
+  return n ? n.midi : null;
+}
+
 describe("compileSong", () => {
   for (const song of SONGS) {
     describe(song.id, () => {
@@ -36,7 +62,7 @@ describe("compileSong", () => {
       it("drives no finger from the right hand", () => {
         // The melody sounds but there is no second hand to render it.
         for (const n of right) expect(n.finger).toBeNull();
-        const strikes = c.strikeTimes.flat().length;
+        const strikes = c.strikeSpans.reduce((s, a) => s + a.length, 0);
         expect(strikes).toBe(left.length);
       });
 
@@ -55,13 +81,30 @@ describe("compileSong", () => {
         }
       });
 
-      it("indexes the left hand into sorted per-finger strike lists", () => {
-        expect(c.strikeTimes).toHaveLength(5);
-        for (const arr of c.strikeTimes) {
+      it("indexes the left hand into sorted per-finger strike spans", () => {
+        expect(c.strikeSpans).toHaveLength(5);
+        for (const arr of c.strikeSpans) {
           for (let i = 1; i < arr.length; i++) {
-            expect(arr[i]).toBeGreaterThanOrEqual(arr[i - 1]);
+            expect(arr[i][0]).toBeGreaterThanOrEqual(arr[i - 1][0]);
           }
         }
+      });
+
+      it("carries how long each note is held, not just when it starts", () => {
+        // A finger must stay down for as long as its note sounds. With onsets
+        // alone the envelope collapses to a fixed blip and the hand twitches then
+        // freezes while the chord is still ringing — which reads as the animation
+        // being out of sync with the audio.
+        for (const arr of c.strikeSpans) {
+          for (const span of arr) {
+            expect(span).toHaveLength(2);
+            expect(span[1]).toBeGreaterThan(0);
+          }
+        }
+      });
+
+      it("keeps the hand engaged for a real share of the piece", () => {
+        expect(coverage(c)).toBeGreaterThan(0.3);
       });
 
       it("lets the final note ring out before the piece ends", () => {
@@ -75,6 +118,15 @@ describe("compileSong", () => {
     });
   }
 
+  it("keeps a hand on the keys almost continuously in the chordal pieces", () => {
+    // Canon and Ode carry the block chords; if the hand is idle for most of
+    // either, the left-hand conceit has stopped working.
+    for (const id of ["canon-in-d", "ode-to-joy"]) {
+      const c = compileSong(SONGS.find((s) => s.id === id));
+      expect(coverage(c)).toBeGreaterThan(0.6);
+    }
+  });
+
   it("never repeats a finger across a pitch change in a single line", () => {
     // Chords are exempt — they get contiguous fingers by construction — but a
     // melodic line must visibly alternate.
@@ -84,7 +136,6 @@ describe("compileSong", () => {
       for (let i = 1; i < solo.length; i++) {
         const prev = solo[i - 1];
         const cur = solo[i];
-        // only compare events that are genuinely consecutive in the left hand
         if (c.events.indexOf(cur) - c.events.indexOf(prev) !== 1) continue;
         const prevMidi = midiOf(c, prev);
         const curMidi = midiOf(c, cur);
@@ -94,7 +145,6 @@ describe("compileSong", () => {
   });
 
   it("plays real chords, not just a single line", () => {
-    // The whole point of using left-hand parts: several fingers land together.
     const chordy = SONGS.filter((s) =>
       compileSong(s).events.some((e) => e.f.length >= 3),
     );
@@ -102,8 +152,6 @@ describe("compileSong", () => {
   });
 
   it("keeps the left hand below the melody", () => {
-    // The visible hand sits at the bass end; if it outranged the melody the
-    // whole left-hand conceit would read as wrong.
     for (const song of SONGS) {
       const c = compileSong(song);
       const left = c.notes.filter((n) => n.hand === "L");
@@ -114,9 +162,3 @@ describe("compileSong", () => {
     }
   });
 });
-
-// events carry fingers, not pitches — recover the pitch for a solo event
-function midiOf(compiled, ev) {
-  const n = compiled.notes.find((x) => x.hand === "L" && Math.abs(x.t - ev.t) < 1e-9);
-  return n ? n.midi : null;
-}

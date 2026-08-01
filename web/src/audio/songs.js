@@ -165,9 +165,9 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
  * while the audio carries the true pitch.
  *
  * Right-hand notes are returned in `notes` (so they sound) but are absent from
- * `events` / `strikeTimes`, so they drive no finger.
+ * `events` / `strikeSpans`, so they drive no finger.
  *
- * Returns { notes, events, strikeTimes, duration } with all times in SECONDS.
+ * Returns { notes, events, strikeSpans, duration } with all times in SECONDS.
  */
 export function compileSong(song) {
   const { step } = song;
@@ -235,13 +235,16 @@ export function compileSong(song) {
     return { t: g[0].t, f, lat: f.reduce((s, x) => s + x, 0) / f.length - 2 };
   });
 
-  const strikeTimes = [[], [], [], [], []];
-  for (const g of groups) for (const n of g) strikeTimes[n.finger].push(n.t);
-  for (const arr of strikeTimes) arr.sort((a, b) => a - b);
+  // Per finger: [onset, howLongItIsHeld] — NOT just onsets. A finger has to stay
+  // down for as long as its note sounds, or the hand blips for a fraction of a
+  // second and then sits frozen while you can still hear the note ringing.
+  const strikeSpans = [[], [], [], [], []];
+  for (const g of groups) for (const n of g) strikeSpans[n.finger].push([n.t, n.dur]);
+  for (const arr of strikeSpans) arr.sort((a, b) => a[0] - b[0]);
 
   // Let the last note ring out rather than cutting the piece off on its attack.
   const last = notes[notes.length - 1];
   const duration = last.t + Math.max(last.dur, 0.6) + 0.5;
 
-  return { notes, events, strikeTimes, duration };
+  return { notes, events, strikeSpans, duration };
 }
