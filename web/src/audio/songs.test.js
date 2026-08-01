@@ -21,6 +21,17 @@ function coverage(c) {
   return covered / c.duration;
 }
 
+// left-hand notes regrouped by strike time, so chord grips can be inspected
+function groupsOf(c) {
+  const byTime = new Map();
+  for (const n of c.notes.filter((x) => x.hand === "L")) {
+    const k = n.t.toFixed(4);
+    if (!byTime.has(k)) byTime.set(k, []);
+    byTime.get(k).push(n);
+  }
+  return [...byTime.values()];
+}
+
 // events carry fingers, not pitches — recover the pitch for a solo event
 function midiOf(compiled, ev) {
   const n = compiled.notes.find((x) => x.hand === "L" && Math.abs(x.t - ev.t) < 1e-9);
@@ -114,6 +125,27 @@ describe("compileSong", () => {
 
       it("spreads fingers across the range rather than collapsing to one", () => {
         expect(new Set(left.map((n) => n.finger)).size).toBeGreaterThanOrEqual(3);
+      });
+
+      it("fingers it as a LEFT hand: pinky on the low notes, thumb on the high", () => {
+        // FINGERS is [thumb, index, middle, ring, pinky], so "low notes on the
+        // pinky" means low pitch → HIGH finger index. Inverting this is the
+        // right-hand instinct and is glaring to anyone who plays: the index
+        // finger ends up reaching for bass notes the pinky should be holding.
+        const byPitch = [...left].sort((a, b) => a.midi - b.midi);
+        const q = Math.max(1, Math.floor(byPitch.length / 4));
+        const avg = (ns) => ns.reduce((s, n) => s + n.finger, 0) / ns.length;
+        expect(avg(byPitch.slice(0, q))).toBeGreaterThan(avg(byPitch.slice(-q)));
+      });
+
+      it("grips a chord with the low note on the pinky side", () => {
+        for (const g of groupsOf(c)) {
+          if (g.length < 2) continue;
+          const byPitch = [...g].sort((a, b) => a.midi - b.midi);
+          for (let i = 1; i < byPitch.length; i++) {
+            expect(byPitch[i].finger).toBeLessThan(byPitch[i - 1].finger);
+          }
+        }
       });
     });
   }

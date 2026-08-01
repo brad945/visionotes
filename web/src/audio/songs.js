@@ -186,7 +186,12 @@ export function compileSong(song) {
   const lo = left.length ? Math.min(...left.map((n) => n.midi)) : 0;
   const hi = left.length ? Math.max(...left.map((n) => n.midi)) : 1;
   const span = Math.max(1, hi - lo);
-  for (const n of left) n.finger = Math.round(((n.midi - lo) / span) * 4);
+  // LEFT-HAND FINGERING IS INVERTED relative to a right hand: the pinky takes the
+  // LOWEST notes and the thumb the highest. FINGERS is [thumb, index, middle,
+  // ring, pinky], so the lowest pitch maps to 4 and the highest to 0. Getting
+  // this backwards is immediately obvious to anyone who plays — the index finger
+  // ends up reaching for bass notes the pinky should be on.
+  for (const n of left) n.finger = 4 - Math.round(((n.midi - lo) / span) * 4);
 
   // Group the left hand by strike time — a chord is one event, not three.
   const byTime = new Map();
@@ -206,7 +211,9 @@ export function compileSong(song) {
       // of the E–D# trill in Für Elise: it alternates). Where the rank mapping
       // repeats a finger, step in the direction the line moved.
       if (prevMidi !== null && n.midi !== prevMidi && n.finger === prevFinger) {
-        const dir = n.midi > prevMidi ? 1 : -1;
+        // Rising pitch moves TOWARD THE THUMB on a left hand, i.e. toward a lower
+        // finger index — the opposite of the right-hand instinct.
+        const dir = n.midi > prevMidi ? -1 : 1;
         let f = prevFinger + dir;
         // Already on the outermost finger — stepping further would clamp back
         // onto the same one and read as a repeat. Go the other way instead, as
@@ -215,14 +222,16 @@ export function compileSong(song) {
         n.finger = clamp(f, 0, 4);
       }
     } else {
-      // A chord: one finger cannot strike two keys, so hand out distinct
-      // adjacent fingers low-note-to-high around where the rank mapping put the
-      // chord. That is how a hand actually grips one.
+      // A chord: one finger cannot strike two keys, so hand out distinct adjacent
+      // fingers around where the rank mapping put the chord. Ordering is
+      // left-hand: the LOWEST note of the chord takes the highest finger index
+      // (the pinky) and pitch rises toward the thumb — so a bass-plus-chord grip
+      // spans the hand the way a real one does.
       g.sort((a, b) => a.midi - b.midi);
       if (g.length > 5) g.length = 5;
       const mean = g.reduce((s, n) => s + n.finger, 0) / g.length;
       const start = clamp(Math.round(mean - (g.length - 1) / 2), 0, 5 - g.length);
-      g.forEach((n, i) => { n.finger = start + i; });
+      g.forEach((n, i) => { n.finger = start + (g.length - 1 - i); });
     }
     const last = g[g.length - 1];
     prevFinger = last.finger;
