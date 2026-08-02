@@ -140,6 +140,9 @@ const pianoStrike = (i, phraseT) => {
 // offsets that onto real key slots, positioned so the played range sits under
 // the hand and stays on screen.
 const SONG_KEY_ANCHOR = 1;
+// Time constant of the song cross-fade, in seconds (~0.8s to settle). Matches
+// the feel of the old 0.08-per-frame ease at 60Hz, but holds at any framerate.
+const SONG_FADE_TAU = 0.2;
 // The song strike envelope (press / hold for the note's length / lift) now lives
 // in ../audio/strike so it can be unit-tested — it was a private const in this
 // 1400-line component, which is why the behaviour it exists to provide had no
@@ -411,6 +414,7 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
     let armLift = 0; // eased: the whole hand pivots up at the elbow to reach high cursors
     let lungeX = 0, lungeY = 0; // eased translation of the whole model toward the Send button
     let pianoX = 0, pianoY = 0; // eased model offset for the idle piano (lateral run + wrist dip)
+    let lastFrameMs = t0; // for frame-rate-independent easing
     let songFade = 0; // eased 0→1 as a song starts/stops — cross-fades the keyboard
     //                   and the playing pose. Without it the keyboard would blink in
     //                   and out in a single frame on play/pause and at every song
@@ -555,9 +559,20 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
       // Song mode: the piano player is playing a piece. Sampled ONCE per frame so
       // every consumer below sees a consistent value, and the clock is read live
       // off the AudioContext so each strike lands on the note you actually hear.
-      const songActive = songBus.active && !!songBus.strikeSpans;
-      const songT = songActive ? songBus.getTime() : 0;
-      songFade += ((songActive ? 1 : 0) - songFade) * 0.08;
+      const songHeld = !!songBus.strikeSpans && !!songBus.events; // data attached (may be suspended)
+      const songActive = songBus.active && songHeld;
+      // Read the clock whenever a song is ATTACHED, not only while it plays.
+      // Suspended, getTime() returns the frozen playback position, which is what
+      // holds the hand on its last chord through the fade; zeroing it here would
+      // snap the pose back to the top of the piece instead.
+      const songT = songHeld ? songBus.getTime() : 0;
+      // Ease on WALL CLOCK, not per frame. A fixed per-frame coefficient makes
+      // the cross-fade last however long a frame happens to take: ~0.8s at 60Hz
+      // but ~0.35s on a 144Hz display, and near-instant on a 240Hz one, so the
+      // effect this was written to produce quietly disappears on better hardware.
+      const frameDt = Math.min(0.1, (now - lastFrameMs) / 1000);
+      lastFrameMs = now;
+      songFade += ((songActive ? 1 : 0) - songFade) * (1 - Math.exp(-frameDt / SONG_FADE_TAU));
 
       // While a song plays the hand must stay over its keyboard, so the hover-lunge
       // is suppressed — otherwise moving the cursor onto Send mid-piece would drag
@@ -628,6 +643,13 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
       // (the keyboard is drawn at globalAlpha = pianoGate). The morph factor is
       // preserved so the thumbs-up still beats a playing song.
       const pianoGate = Math.max(songFade, 1 - idleActive) * (inMorphSeq ? 0 : 1);
+      // The keyboard needs its OWN alpha, because `inMorphSeq ? 0 : 1` is a hard
+      // binary: trigger the thumbs-up mid-song and the keyboard blinked out on
+      // one frame and back in 4.58s later — exactly the pop the cross-fade was
+      // written to remove. The strike freeze genuinely needs the binary (the dots
+      // are snapshotted), but the keyboard only needs to be gone while the hand
+      // is a thumbs-up, so ride `morph`, which is already eased both ways.
+      const kbAlpha = Math.max(songFade, 1 - idleActive) * (1 - morph);
       const handFrozen = inMorphSeq; // freeze the hand pose so the dots hold + resume cleanly
       const phraseT = (t * PIANO_BPS) % PIANO_PHRASE_BEATS;
       const pianoFlexArr = [0, 0, 0, 0, 0];
@@ -635,7 +657,14 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
       if (pianoGate > 0.01) {
         let strkSum = 0;
         let latTarget = 0;
-        if (songActive) {
+        // Drive from the song for as long as the cross-fade is still running, not
+        // just while it is actively playing. `songActive` flips in a single frame
+        // on pause and at every song boundary, and the idle phrase it fell back
+        // to runs on a free-running clock with no relation to the music — so the
+        // fingers snapped to an unrelated pose while the keyboard was still up.
+        // The bus keeps the spans attached when suspended, and getTime() returns
+        // the frozen position, so the hand simply holds its last chord instead.
+        if (songHeld && (songActive || songFade > 0.01)) {
           const evs = songBus.events;
           let recentEv = null;
           for (const ev of evs) {
@@ -875,7 +904,7 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
       // UNDER the hand. The keyboard is fixed (so the lateral run reads as the hand
       // moving along the keys) and the key under each striking fingertip sinks in
       // sync with the finger press.
-      if (pianoGate > 0.02) {
+      if (kbAlpha > 0.02) {
         const k = kbRef.current; // live tuning knobs (DEV panel); = KB_DEFAULTS in production
         // `restX/restY` is the UN-STRUCK fingertip. The live tip moves up to 76px
         // during its own press, which is 2 key slots at this angle, so hit-testing
@@ -958,7 +987,7 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
         // OPAQUE keys, faded by pianoGate so the keyboard fades in/out with piano mode
         // (only the fade uses alpha): otherwise the page background bleeds through and, on
         // the dark theme, blackens the pressed front faces.
-        bgCtx.globalAlpha = pianoGate;
+        bgCtx.globalAlpha = kbAlpha;
         // rotate the keyboard CLOCKWISE around the (FIXED) base of the thumb. Use the
         // CONSTANT rest-pose thumb MCP so the pivot never moves → the whole keyboard is
         // stable in size AND place (not tied to the live, breathing thumb).
@@ -1384,24 +1413,34 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
         bgCtx.globalCompositeOperation = "source-atop";
         bgCtx.drawImage(shadowCanvas, 0, 0);
         bgCtx.restore();
+        // Punch the index finger out of the HAND BUFFER when it will also be
+        // drawn on fgCtx, so it isn't composited twice (bg + fg, both at
+        // MODEL_ALPHA) and left darker than every other finger.
+        //
+        // This must happen after the shadow is derived (so the shadow keeps its
+        // index) and before the hand is composited — NOT afterwards on bgCtx.
+        // Punching bgCtx cut a finger-shaped hole through the keyboard and the
+        // shadow underneath it, which are innocent bystanders: bgCtx holds the
+        // whole scene, handCanvas holds only the hand. The hole was invisible
+        // while the two layers were mutually exclusive, but the keyboard fade
+        // means both can now be on screen at once — during the ~700ms after the
+        // cursor stops, `front` is still positive while the keyboard is already
+        // fading in.
+        if (idxJob) {
+          handCtx.save();
+          handCtx.globalCompositeOperation = "destination-out";
+          handCtx.globalAlpha = 1;
+          pathPoly(handCtx, idxJob.poly);
+          handCtx.fill();
+          handCtx.restore();
+        }
+
         // COMPOSITE the hand at ONE uniform alpha
         bgCtx.save();
         bgCtx.setTransform(1, 0, 0, 1, 0, 0);
         bgCtx.globalAlpha = MODEL_ALPHA;
         bgCtx.drawImage(handCanvas, 0, 0);
         bgCtx.restore();
-
-        // Punch the index finger out of bgCtx when it will be drawn on fgCtx —
-        // otherwise the index gets double-composited (bg + fg both at MODEL_ALPHA)
-        // and looks darker / more opaque than every other finger.
-        if (idxJob) {
-          bgCtx.save();
-          bgCtx.globalCompositeOperation = "destination-out";
-          bgCtx.globalAlpha = 1;
-          pathPoly(bgCtx, idxJob.poly);
-          bgCtx.fill();
-          bgCtx.restore();
-        }
 
         ctx = bgCtx;
       }
