@@ -49,8 +49,10 @@ function preludeInC() {
       const u = b * 16 + half * 8;
       notes.push([u, bar.L[0], 8, "L"]); // bass rings under the whole figure
       notes.push([u + 1, bar.L[1], 7, "L"]);
-      bar.R.forEach((m, i) => notes.push([u + 2 + i, m, 2, "R"]));
-      bar.R.forEach((m, i) => notes.push([u + 5 + i, m, 2, "R"]));
+      // Each RH note is a sixteenth and lasts a sixteenth — this is a running
+      // arpeggio, not a held chord. Only the LH sustains underneath.
+      bar.R.forEach((m, i) => notes.push([u + 2 + i, m, 1, "R"]));
+      bar.R.forEach((m, i) => notes.push([u + 5 + i, m, 1, "R"]));
     }
   });
   return notes;
