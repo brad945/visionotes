@@ -28,14 +28,20 @@
  */
 
 // --- Prelude in C (Bach, WTC I) ---------------------------------------------
-// Every bar is one broken chord played twice: the left hand lays down two low
-// notes and holds them while the right hand arpeggiates above.
+// Every bar is one broken chord stated TWICE, written out in full. Within each
+// half the left hand lays down its two notes and holds them while the right hand
+// plays its three above, then repeats that same three-note group.
+//
+// Pitches verified against the Humdrum kern, LilyPond and MusicXML editions of
+// BWV 846: the left hand sits on MIDDLE C, not the C below it. An earlier version
+// of this data was a full octave low, which both darkened the piece and made the
+// synth's bass ring (which lengthens with depth) muddy the arpeggio.
 function preludeInC() {
   const bars = [
-    { L: [48, 52], R: [55, 60, 64] }, // C
-    { L: [48, 50], R: [57, 62, 65] }, // Dm7/C
-    { L: [47, 50], R: [55, 62, 65] }, // G7/B
-    { L: [48, 52], R: [55, 60, 64] }, // C
+    { L: [60, 64], R: [67, 72, 76] }, // m1  C      — C4 E4 / G4 C5 E5
+    { L: [60, 62], R: [69, 74, 77] }, // m2  Dm7/C  — C4 D4 / A4 D5 F5
+    { L: [59, 62], R: [67, 74, 77] }, // m3  G7/B   — B3 D4 / G4 D5 F5
+    { L: [60, 64], R: [67, 72, 76] }, // m4  C      — C4 E4 / G4 C5 E5
   ];
   const notes = [];
   bars.forEach((bar, b) => {
