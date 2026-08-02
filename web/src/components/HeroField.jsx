@@ -142,6 +142,16 @@ const SONG_FADE_TAU = 0.2;
 // Fuer Elise's left hand arrive ~10 frames apart at 60Hz, so this closes ~85%
 // of the gap between one note and the next — a hand moving, not teleporting.
 const SONG_AIM_EASE = 0.18;
+// How far the hand may travel from its rest pose while playing, in px. Sized to
+// keep the whole hand in shot at the login splash's framing.
+// Travel bounds, and they are deliberately lopsided. Measured at this framing,
+// consecutive keys separate about 5:1 VERTICALLY on screen — 355px down the
+// range against 75px across it — because the keyboard recedes away from a
+// side-on camera. So moving ALONG the keys is very nearly a vertical move, and
+// a wide horizontal allowance just lets the controller swing the hand off frame
+// chasing an axis the keys barely use.
+const SONG_AIM_REACH_X = 70;
+const SONG_AIM_REACH_Y = 250;
 // The song strike envelope (press / hold for the note's length / lift) now lives
 // in ../audio/strike so it can be unit-tested — it was a private const in this
 // 1400-line component, which is why the behaviour it exists to provide had no
@@ -321,23 +331,17 @@ function chordShape(seg, curl, prof) {
 // renders under import.meta.env.DEV — it never ships; the defaults below are
 // what production shows. Keep tweaking via the panel; tell me to re-bake.
 const KB_DEFAULTS = {
-  posX: -40, posY: 24,   // screen-px offset of the whole keyboard
-  // The keyboard used to be drawn at scale 3, which made a white key ~155px on
-  // screen while the whole hand spans ~300px — so the hand covered TWO keys
-  // where a real hand covers five, and the keyboard read as roughly 2.6x too
-  // large for its player. That is why the hand could never reach the notes it
-  // was playing: Fuer Elise's left hand spans ten white keys, which at scale 3
-  // is most of the screen. Sizing the keys to the hand is what makes travelling
-  // to a note a movement rather than a lunge.
-  scale: 1.15,        // size multiplier about the (fixed) pivot
+  posX: 800, posY: -122,   // screen-px offset of the whole keyboard
+  // DO NOT "correct" the scale or yaw to make the keyboard anatomically
+  // proportional to the hand. The hand is a flat 2D SIDE PROFILE, not a 3D
+  // model, and this framing exists to accommodate it: a steep side-on keyboard
+  // reads correctly behind a side-on hand. Opening the yaw up (tried at -30,
+  // scale 1.15) turns the piano into a three-quarter front view, which only
+  // works if the hand is 3D as well — it isn't, and the result looks wrong.
+  // Whatever the finger-to-key mapping needs, it accommodates THIS framing.
+  scale: 3,           // size multiplier about the (fixed) pivot
   tiltDeg: -1,         // 2D screen tilt, DELTA from the baseline (0.2 − 9°)
-  // Opened up from -51. At -51 the slab was so nearly edge-on that each key
-  // rendered as a ~1900px-long, ~6px-tall sliver and successive keys separated
-  // mostly in DEPTH rather than across the screen — which is why the pitch axis
-  // ran 30 degrees below horizontal and a key could not be addressed by a
-  // fingertip. A gentler yaw keeps the side-on look while letting the keys read
-  // as keys and the run read as travelling along them.
-  yawDeg: -30,        // top-down 3D yaw about the left edge (− = clockwise)
+  yawDeg: -51,        // top-down 3D yaw about the left edge (− = clockwise)
   depth: 0.65,        // yaw depth/sensitivity (larger = gentler swing)
   extL: 6, extR: 4, // extra key slots added left / right
   recede: 0.42,       // how far the key-backs travel toward the vanishing point
@@ -606,7 +610,27 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
         const x = black ? kbLeft + (slot + 1) * wKeyW : kbLeft + (slot + 0.5) * wKeyW;
         return toScreen(proj(x, KEY_PRESS_DEPTH));
       };
-      return { k, kbLeft, kbW, nearY, faceH, nWhite, wKeyW, EXT_L, EXT_R, proj, toScreen, keyPoint, pcx, pcy, kbTilt };
+      // Which drawn key slot a screen point falls in, using the SAME quad test
+      // the renderer uses to decide what to depress. At this yaw a key is a long
+      // sliver, so a fingertip can be correctly on a key while sitting far from
+      // any single sampled point along it — only the quad answers honestly.
+      const slotAt = (pt) => {
+        for (let kk = -EXT_L; kk < nWhite + EXT_R; kk++) {
+          const x0 = kbLeft + kk * wKeyW, x1 = x0 + wKeyW;
+          const quad = [toScreen(proj(x0, 0)), toScreen(proj(x1, 0)),
+                        toScreen(proj(x1, 1)), toScreen(proj(x0, 1))];
+          if (pointInPoly(pt[0], pt[1], quad)) return kk;
+        }
+        return null;
+      };
+      // Screen displacement from one slot to the next, measured locally: the
+      // keyboard recedes, so this grows with slot and no fixed step stays true.
+      const slotStep = (slot) => {
+        const a = toScreen(proj(kbLeft + (slot + 0.5) * wKeyW, 0));
+        const b = toScreen(proj(kbLeft + (slot + 1.5) * wKeyW, 0));
+        return [b[0] - a[0], b[1] - a[1]];
+      };
+      return { k, kbLeft, kbW, nearY, faceH, nWhite, wKeyW, EXT_L, EXT_R, proj, toScreen, keyPoint, slotAt, slotStep, pcx, pcy, kbTilt };
     }
 
 
@@ -777,26 +801,38 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
             strkSum += pianoFlexArr[si];
           }
         }
-        if (songAim && songAim.aimKey && songBus.aimRef) {
-          // TRAVEL TO THE NOTE. The hand used to be nudged by lat*PIANO_SHIFT — a
-          // fixed +/-26px, about one key slot, while Fuer Elise's left hand spans
-          // ten. So it barely moved and never followed the music.
+        if (songAim && songAim.aimKey && lastRestTips && lastRestTips[songAim.aimFinger]) {
+          // TRAVEL TO THE NOTE — as a closed loop on the quantity that actually
+          // matters: which key slot the striking finger is sitting in.
           //
-          // Move by the key's DISPLACEMENT from the song's lowest note, not to the
-          // key's absolute position. Aiming a fingertip at absolute key coordinates
-          // looks correct on paper but hurls the hand hundreds of pixels away from
-          // the pose the rig was built around, because the hand's rest position and
-          // the keyboard's origin are unrelated. A displacement keeps the hand at
-          // home for the lowest note and moves it exactly as far as the notes are
-          // apart — which at this tuning is ~90px across and ~200px down.
-          const ref = kbGeom.keyPoint(
-            songBus.aimRef.white - songBus.keyOffset, songBus.aimRef.black,
-          );
-          const cur = kbGeom.keyPoint(
-            songAim.aimKey.white - songBus.keyOffset, songAim.aimKey.black,
-          );
-          pianoX += ((cur[0] - ref[0]) * pianoGate - pianoX) * SONG_AIM_EASE;
-          pianoY += ((cur[1] - ref[1]) * pianoGate - pianoY) * SONG_AIM_EASE;
+          // Open-loop attempts all failed for the same reason. Aiming the finger
+          // at a sampled point on the key overshot, because a key is a long
+          // sliver here and the sample sits far along it. Displacing the hand by
+          // the key-to-key screen delta ignored WHICH finger strikes, so it
+          // worked for the thumb and index (3 of 7 notes) and missed by up to 5
+          // slots for the ring and pinky. And no fixed step can be right anyway:
+          // the keyboard recedes, so screen distance per slot grows across it.
+          //
+          // Measuring the error in SLOTS and stepping by the local per-slot
+          // vector sidesteps all of that — it converges whatever the finger and
+          // wherever it is, and it optimises exactly the property being judged.
+          const want = songAim.aimKey.white - songBus.keyOffset;
+          const tip = lastRestTips[songAim.aimFinger];
+          const at = kbGeom.slotAt(tip);
+          if (at !== null) {
+            const err = want - at;
+            const step = kbGeom.slotStep(at);
+            pianoX += err * step[0] * SONG_AIM_EASE * pianoGate;
+            pianoY += err * step[1] * SONG_AIM_EASE * pianoGate;
+          }
+          // Bound the travel. The loop above only knows about slots, not about
+          // staying in shot, and because the fingers are spread ACROSS the keys
+          // while the keys stack ALONG the view, the hand position needed to put
+          // a given finger on a given slot varies wildly between fingers — left
+          // unbounded the hand wanders out of frame over a few bars. Inside the
+          // box it tracks exactly; at the edge it stops rather than leaving.
+          pianoX = clamp(pianoX, -SONG_AIM_REACH_X, SONG_AIM_REACH_X);
+          pianoY = clamp(pianoY, -SONG_AIM_REACH_Y, SONG_AIM_REACH_Y);
         } else {
           pianoX += (latTarget * PIANO_SHIFT * pianoGate - pianoX) * 0.07;
           pianoY += (Math.min(strkSum, 1.6) * PIANO_DROP * pianoGate - pianoY) * 0.3;
@@ -1031,6 +1067,46 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
           restX: job.restTip[0], restY: job.restTip[1],
           s: pianoFlexArr[order[idx]] * pianoGate,
         }));
+        // DEV probe: publish the real numbers the aim depends on, so the
+        // finger-to-key relationship can be measured from the page instead of
+        // reasoned about from approximations. Costs nothing in production —
+        // import.meta.env.DEV is compiled out — and only runs under ?rafshim=1.
+        if (import.meta.env.DEV && window.__rafShim) {
+          const probe = { pianoX, pianoY, tips: {}, keys: {} };
+          fingerJobs.forEach((job, idx) => { probe.tips[order[idx]] = job.restTip; });
+          if (songBus.keys) {
+            for (const id of songBus.keys.keys()) {
+              const black = id[0] === "b";
+              const abs = parseInt(id.slice(1), 10);
+              probe.keys[id] = kbGeom.keyPoint(abs - songBus.keyOffset, black);
+            }
+          }
+          if (songAim && songAim.aimKey) {
+            probe.aim = {
+              finger: songAim.aimFinger,
+              key: (songAim.aimKey.black ? "b" : "w") + songAim.aimKey.white,
+              slot: songAim.aimKey.white - songBus.keyOffset,
+            };
+          }
+          // Which key slot each fingertip is actually INSIDE, using the same
+          // quad test the renderer uses. This is the only honest measure of
+          // finger-to-key tracking: at this yaw a key is a long sliver, so a
+          // fingertip can be on the right key while being far from any single
+          // sampled point along it.
+          probe.fingerSlot = {};
+          const G = kbGeom; // destructured copies are not in scope yet here
+          for (let fi = 0; fi < 5; fi++) {
+            const tp = probe.tips[fi];
+            if (!tp) continue;
+            for (let kk = -G.EXT_L; kk < G.nWhite + G.EXT_R; kk++) {
+              const x0 = G.kbLeft + kk * G.wKeyW, x1 = x0 + G.wKeyW;
+              const quad = [G.toScreen(G.proj(x0, 0)), G.toScreen(G.proj(x1, 0)),
+                            G.toScreen(G.proj(x1, 1)), G.toScreen(G.proj(x0, 1))];
+              if (pointInPoly(tp[0], tp[1], quad)) { probe.fingerSlot[fi] = kk; break; }
+            }
+          }
+          window.__vnProbe = probe;
+        }
         // Song-driven key press. Returns null when no song is playing, so the
         // caller falls back to the geometric hit-test for the idle phrase.
         const songKeyPress = (whiteSlot, black) => {

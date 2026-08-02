@@ -270,10 +270,31 @@ export function compileSong(song) {
   const endsAt = notes.reduce((m, n) => Math.max(m, n.t + Math.max(n.dur, 0.6)), 0);
   const duration = endsAt + 0.5;
 
-  // The key the hand's REST position corresponds to. Travel is measured as a
-  // displacement from here, so the hand moves exactly as far as the notes are
-  // apart while starting from the position the rig was designed around.
-  const aimRef = left.length ? midiToKey(lo) : null;
+  // The key the hand's REST pose corresponds to: the MIDDLE of the played
+  // range, not its bottom. Travel is a displacement from here, so the hand sits
+  // at home mid-range and glides half the span either way — anchoring on the
+  // lowest note instead pushes the whole motion one-directional and walks the
+  // hand off the frame at the top of the range.
+  //
+  // Measured at 1600x900, this framing separates adjacent keys ~5:1 VERTICALLY
+  // on screen (74px across vs 354px down over Für Elise's left hand) while the
+  // hand's fingers spread ~3:1 HORIZONTALLY (276px across, 82px down). The two
+  // axes are near perpendicular, so a specific finger cannot be parked on a
+  // specific key without dragging the hand into the corner. What the hand can
+  // do — and what a side view of a pianist actually looks like — is glide along
+  // the key axis so the playing region tracks the note.
+  // Centre on the midpoint of the KEY SPAN, not the median pitch: the median
+  // note of Für Elise's left hand sits 7 keys above its lowest and only 3 below
+  // its highest, which would bias the whole glide downward.
+  // The anchor need not be a key the piece actually plays — it is only the
+  // origin the glide is measured from, so use the exact midpoint of the span.
+  // Snapping it to the nearest played key re-introduces the bias it exists to
+  // remove (Für Elise's played keys tie either side of its own midpoint).
+  let aimRef = null;
+  if (left.length) {
+    const whites = left.map((n) => n.key.white);
+    aimRef = { white: Math.round((Math.min(...whites) + Math.max(...whites)) / 2), black: false };
+  }
 
   return { notes, events, strikeSpans, keys: [...keySpans.values()], keyOffset, aimRef, duration };
 }

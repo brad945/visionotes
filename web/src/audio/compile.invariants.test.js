@@ -75,10 +75,31 @@ describe("compile invariants", () => {
         }
       });
 
-      it("anchors travel on a real key", () => {
+      it("anchors travel on the MIDDLE of the played range, not its bottom", () => {
+        // Anchoring on the lowest note makes every note displace the hand in one
+        // direction, walking it off the frame at the top of the range. Anchoring
+        // mid-range lets it sit at home and glide half the span either way.
         expect(c.aimRef).toBeTruthy();
-        const lowest = Math.min(...left.map((n) => n.key.white));
-        expect(c.aimRef.white).toBe(lowest);
+        const whites = left.map((n) => n.key.white);
+        const lo = Math.min(...whites), hi = Math.max(...whites);
+        expect(c.aimRef.white).toBeGreaterThanOrEqual(lo);
+        expect(c.aimRef.white).toBeLessThanOrEqual(hi);
+        // and genuinely interior when the range is wide enough to have a middle
+        if (new Set(whites).size >= 3) {
+          expect(c.aimRef.white).toBeGreaterThan(lo);
+          expect(c.aimRef.white).toBeLessThan(hi);
+        }
+      });
+
+      it("keeps the hand's glide symmetric about home", () => {
+        // The travel budget either side of rest should be comparable; a lopsided
+        // anchor is what pushes the hand out of frame at one end.
+        const whites = left.map((n) => n.key.white);
+        const below = c.aimRef.white - Math.min(...whites);
+        const above = Math.max(...whites) - c.aimRef.white;
+        expect(Math.abs(above - below)).toBeLessThanOrEqual(
+          Math.max(2, Math.round((above + below) * 0.5)),
+        );
       });
 
       it("aims at the lowest note of a chord", () => {
