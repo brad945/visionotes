@@ -98,6 +98,21 @@ export default class PianoSynth {
     voice.connect(lp);
     lp.connect(this.master);
 
+    // The per-note `voice` and `lp` must be released once the last partial has
+    // ended, or every note leaves two nodes permanently wired to master. On a
+    // login page that loops indefinitely that is roughly 39,000 orphan nodes an
+    // hour — the Set was bounded, but the audio GRAPH was not.
+    let livePartials = PARTIALS.length;
+    const releaseVoice = () => {
+      if (--livePartials > 0) return;
+      try {
+        voice.disconnect();
+        lp.disconnect();
+      } catch {
+        /* already torn down */
+      }
+    };
+
     for (const [mult, amp, decayRate] of PARTIALS) {
       const osc = ctx.createOscillator();
       osc.type = "sine";
@@ -125,6 +140,7 @@ export default class PianoSynth {
         } catch {
           /* already torn down */
         }
+        releaseVoice();
       };
     }
   }

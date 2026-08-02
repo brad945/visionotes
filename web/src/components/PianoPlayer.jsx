@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import PianoSynth from "../audio/PianoSynth";
 import { SONGS, compileSong } from "../audio/songs";
-import { setSongSource, clearSongSource } from "../audio/songBus";
+import { setSongSource, suspendSongSource, clearSongSource } from "../audio/songBus";
 
 // Audio scheduling: the classic "two clocks" pattern — a coarse JS timer queues
 // notes onto the sample-accurate audio clock, so timing never depends on when
@@ -57,10 +57,15 @@ export default function PianoPlayer() {
   };
 
   // ---- transport controls -------------------------------------------------
+  // Stop sounding, but leave the song ATTACHED to the bus. Detaching it here is
+  // what made the hand abandon its pose mid-bar and start air-playing the idle
+  // phrase the instant you hit pause — the idle phrase runs on a free-running
+  // clock with no relation to the music. Suspended, getTime() returns the frozen
+  // offset, so the hand simply holds its last chord.
   function stopAudio() {
     synth.stopAll();
     transport.current.playing = false;
-    clearSongSource();
+    suspendSongSource();
   }
 
   function startAt(seconds) {
@@ -73,7 +78,7 @@ export default function PianoPlayer() {
     tr.playing = true;
     tr.nextNote = compiled.notes.findIndex((n) => n.t >= seconds);
     if (tr.nextNote < 0) tr.nextNote = compiled.notes.length;
-    setSongSource(compiled.events, compiled.strikeSpans, () => getTime.current());
+    setSongSource(compiled, () => getTime.current());
     setPlaying(true);
   }
 
@@ -92,6 +97,7 @@ export default function PianoPlayer() {
   function jump(delta) {
     const wasPlaying = playing;
     stopAudio();
+    clearSongSource(); // different piece — its key spans no longer apply
     setPlaying(false);
     transport.current.offset = 0;
     setPos(0);
@@ -162,6 +168,13 @@ export default function PianoPlayer() {
   // mobile and when the page enters the back/forward cache.
   useEffect(() => {
     const kill = () => {
+      // Reset the TRANSPORT as well as the context. As an unmount cleanup that
+      // is redundant, but this same closure is the pagehide listener, where the
+      // component stays mounted: closing the context while transport.playing
+      // stayed true left getTime() reading a clock that had restarted at zero.
+      transport.current.playing = false;
+      transport.current.startedAt = 0;
+      setPlaying(false);
       clearSongSource();
       synth.close();
     };

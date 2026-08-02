@@ -108,6 +108,8 @@ export const SONGS = [
   },
 ];
 
+import { midiToKey, whiteIndex, keyId } from "./pianoKeys";
+
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
 /**
@@ -130,13 +132,17 @@ export function compileSong(song) {
   const { step } = song;
 
   const notes = song.notes
-    .map(([unit, midi, durUnits, hand]) => ({
-      t: unit * step,
-      midi,
-      dur: durUnits * step,
-      hand,
-      finger: null,
-    }))
+    .map(([unit, midi, durUnits, hand]) => {
+      if (!(durUnits > 0)) {
+        // A zero or negative duration makes the strike envelope discontinuous
+        // and is always an authoring slip. Fail loudly at the source rather than
+        // letting it become a visual glitch nobody can trace back.
+        throw new Error(
+          `${song.id}: note ${midi} at unit ${unit} has duration ${durUnits}; must be > 0`,
+        );
+      }
+      return { t: unit * step, midi, dur: durUnits * step, hand, finger: null };
+    })
     .sort((a, b) => a.t - b.t || a.midi - b.midi);
 
   const left = notes.filter((n) => n.hand === "L");
@@ -208,6 +214,31 @@ export function compileSong(song) {
   for (const g of groups) for (const n of g) strikeSpans[n.finger].push([n.t, n.dur]);
   for (const arr of strikeSpans) arr.sort((a, b) => a[0] - b[0]);
 
+  // WHICH KEY GOES DOWN, per note. This is deliberately NOT derived from where a
+  // fingertip happens to land: at the tuned camera angle the hand's lateral
+  // travel carries about 0.04 key slots of authority against 4-10 slots of noise
+  // from the wrist hinge alone, so finger geometry cannot address a key (see
+  // pianoKeys.js). Driving the press from the note instead makes the lit key a
+  // pure function of the music — stable under breathing, wrist sway and resize.
+  //
+  // Slots are RELATIVE to the left hand's lowest note, so slot 0 is the bottom
+  // of the played range; the renderer anchors that onto real keys. Only the left
+  // hand is mapped: it is the part with a visible hand over it, and its range
+  // fits the keys actually on screen.
+  const keySpans = new Map(); // keyId -> [[onset, held], ...]
+  if (left.length) {
+    const base = whiteIndex(lo);
+    for (const n of left) {
+      const k = midiToKey(n.midi);
+      const slot = { white: k.white - base, black: k.black };
+      n.key = slot;
+      const id = keyId(slot);
+      if (!keySpans.has(id)) keySpans.set(id, { ...slot, spans: [] });
+      keySpans.get(id).spans.push([n.t, n.dur]);
+    }
+    for (const entry of keySpans.values()) entry.spans.sort((a, b) => a[0] - b[0]);
+  }
+
   // The piece is over when the LAST-ENDING note finishes — not when the last
   // note STARTS. Those differ whenever a held note is struck before shorter
   // ones: Für Elise's closing A4 is struck on the downbeat and rings under the
@@ -216,5 +247,5 @@ export function compileSong(song) {
   const endsAt = notes.reduce((m, n) => Math.max(m, n.t + Math.max(n.dur, 0.6)), 0);
   const duration = endsAt + 0.5;
 
-  return { notes, events, strikeSpans, duration };
+  return { notes, events, strikeSpans, keys: [...keySpans.values()], duration };
 }

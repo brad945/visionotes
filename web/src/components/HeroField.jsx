@@ -1,6 +1,7 @@
 import { useRef, useEffect, useState } from "react";
 import { useTheme } from "../theme/ThemeProvider";
 import { songBus } from "../audio/songBus";
+import { strikeAt } from "../audio/strike";
 import "./HeroField.css";
 
 // Theme-aware particle palettes (rgb triples used in rgba()).
@@ -134,33 +135,15 @@ const pianoStrike = (i, phraseT) => {
   const dtBeats = recent < 0 ? phraseT + (PIANO_PHRASE_BEATS - times[times.length - 1]) : phraseT - recent;
   return pianoEnv(dtBeats / PIANO_BPS);
 };
-// Strike envelope for a PLAYED SONG. Unlike pianoEnv — a fixed 0.28s triangle,
-// which fits the idle phrase because its notes come every ~0.29s — a real piece
-// holds notes. A finger must therefore stay DOWN for as long as its note sounds:
-// with a fixed blip the hand twitches for a quarter second and then sits frozen
-// while you can still hear the chord ringing, which reads as the animation being
-// out of sync with the audio. Press, settle under the weight, then lift.
-// Spans are [onset, heldFor] in seconds; the timeline runs once, so before the
-// first strike a finger is simply at rest (no wrap-around).
-const SONG_PRESS = 0.05; // time to push the key down
-const SONG_LIFT = 0.16; // time to come back off it
-const SONG_SETTLE = 0.35; // how quickly a held finger relaxes to its resting weight
-const songLevel = (dt) => 1 - 0.25 * Math.min(1, Math.max(0, dt - SONG_PRESS) / SONG_SETTLE);
-const songStrike = (spans, tSec) => {
-  if (!spans || !spans.length) return 0;
-  let recent = null;
-  for (const s of spans) {
-    if (s[0] <= tSec) recent = s;
-    else break;
-  }
-  if (!recent) return 0;
-  const dt = tSec - recent[0];
-  const held = recent[1];
-  if (dt < SONG_PRESS) return dt / SONG_PRESS; // pressing down
-  if (dt < held) return songLevel(dt); // holding the key while it sounds
-  const rel = dt - held;
-  return rel < SONG_LIFT ? songLevel(held) * (1 - rel / SONG_LIFT) : 0; // lifting off
-};
+// Where a song's lowest left-hand note lands on the drawn keyboard. Compiled
+// songs number their keys from 0 = the bottom of the left-hand range; this
+// offsets that onto real key slots, positioned so the played range sits under
+// the hand and stays on screen.
+const SONG_KEY_ANCHOR = 1;
+// The song strike envelope (press / hold for the note's length / lift) now lives
+// in ../audio/strike so it can be unit-tested — it was a private const in this
+// 1400-line component, which is why the behaviour it exists to provide had no
+// direct coverage and shipped with an overlap bug.
 const FINGER_MIN = -104 * DEG; // anatomical clamp on the FINAL base angle (down)
 const FINGER_MAX = 14 * DEG; // anatomical clamp (up) — no wrist hyperextension
 const INDEX_MAX = 42 * DEG; // the index alone may rise higher, to point up at a high cursor
@@ -661,7 +644,7 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
           }
           latTarget = recentEv ? recentEv.lat : 0;
           for (let si = 0; si < 5; si++) {
-            pianoFlexArr[si] = songStrike(songBus.strikeSpans[si], songT);
+            pianoFlexArr[si] = strikeAt(songBus.strikeSpans[si], songT);
             strkSum += pianoFlexArr[si];
           }
         } else {
@@ -894,7 +877,25 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
       // sync with the finger press.
       if (pianoGate > 0.02) {
         const k = kbRef.current; // live tuning knobs (DEV panel); = KB_DEFAULTS in production
-        const tips = fingerJobs.map((job, idx) => ({ x: job.tip[0], y: job.tip[1], s: pianoFlexArr[order[idx]] * pianoGate }));
+        // `restX/restY` is the UN-STRUCK fingertip. The live tip moves up to 76px
+        // during its own press, which is 2 key slots at this angle, so hit-testing
+        // the live tip made a single note light three keys in sequence.
+        const tips = fingerJobs.map((job, idx) => ({
+          x: job.tip[0], y: job.tip[1],
+          restX: job.restTip[0], restY: job.restTip[1],
+          s: pianoFlexArr[order[idx]] * pianoGate,
+        }));
+        // Song-driven key press. Returns null when no song is playing, so the
+        // caller falls back to the geometric hit-test for the idle phrase.
+        // Slots in the compiled song are relative to the left hand's lowest note;
+        // SONG_KEY_ANCHOR places that note on a real drawn key, under the hand.
+        const songKeyPress = (whiteSlot, black) => {
+          if (!songActive || !songBus.keys) return null;
+          const spans = songBus.keys.get(
+            (black ? "b" : "w") + (whiteSlot - SONG_KEY_ANCHOR),
+          );
+          return spans ? strikeAt(spans, songT) : 0;
+        };
         // Keyboard SIZE/POSITION is computed from the CONSTANT rest pose (fixed angles, base
         // hand rotation, NO breathing / wrist-hinge / run / dip), so it NEVER changes size or
         // place — the hand just plays over a fixed keyboard. (Live `tips` only sink struck keys.)
@@ -1024,18 +1025,29 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
           const x2 = x + wKeyW;
           const nl = proj(x, 0), nr = proj(x2, 0); // near (front) edge — yawed
           const fl = proj(x, 1), fr = proj(x2, 1); // far (back) edge — yawed
-          // A key goes down when a striking fingertip is inside the quad this key is
-          // actually DRAWN as — tested in screen space, where the viewer sees both.
-          // Use the UNPRESSED quad so a sinking key can't feed back into its own
-          // hit-test. This is what makes the piano respond to the hand at all, and it
-          // stays correct at whatever posX/scale/tilt/yaw the tuning panel dials in,
-          // instead of needing a fudge factor per tuning. (An earlier version mirrored
-          // the fingertip x about the keyboard's centre — a leftover from before the
-          // keyboard was transformed at all. Don't reintroduce that.)
-          let press = 0;
-          const cap = [toScreen(nl), toScreen(nr), toScreen(fr), toScreen(fl)];
-          for (const tp of tips) {
-            if (tp.s > press && pointInPoly(tp.x, tp.y, cap)) press = tp.s;
+          // WHICH KEY GOES DOWN.
+          //
+          // While a song plays this comes from the NOTE, not from where a
+          // fingertip landed. Measurement killed the geometric approach: at this
+          // camera angle a key draws as a ~1900px-long, ~6px-tall sliver, so the
+          // key a fingertip is "over" is chosen by its vertical position, and the
+          // hand's lateral travel carries ~0.04 slots of authority against 2 slots
+          // of noise from the strike curl and 4-10 from the wrist hinge — roughly
+          // 1:100 signal to noise, and it changed with the window size. Driving
+          // the press from the music makes the lit key exact and stable, and the
+          // hand pose decorative.
+          //
+          // The idle phrase claims no pitches, so it keeps the geometric test —
+          // but against the UN-STRUCK fingertip, because a finger's own curl walks
+          // its tip across two key slots during a single press, which made one
+          // note flash three different keys.
+          let press = songKeyPress(k, false);
+          if (press === null) {
+            press = 0;
+            const cap = [toScreen(nl), toScreen(nr), toScreen(fr), toScreen(fl)];
+            for (const tp of tips) {
+              if (tp.s > press && pointInPoly(tp.restX, tp.restY, cap)) press = tp.s;
+            }
           }
           const dy = press * 0.05 * unit; // pressed key tilts DOWN at the front (pivots at the back)
           const A = [nl[0], nl[1] + dy], B = [nr[0], nr[1] + dy]; // top corners: near sinks on press
@@ -1069,13 +1081,21 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
           if (![0, 1, 3, 4, 5].includes(((k % 7) + 7) % 7)) continue; // +mod handles k<0
           const bx = kbLeft + (k + 1) * wKeyW - bkW / 2;
           const bx2 = bx + bkW;
+          // A black key sits after white slot k, which is exactly how pianoKeys.js
+          // identifies it. Black keys previously could never depress at all — every
+          // fingertip sits in front of them — so an accidental like Für Elise's G#3
+          // sounded with nothing moving. Note-driven press fixes that for free.
+          const bPress = songKeyPress(k, true) || 0;
+          const bDy = bPress * 0.04 * unit;
           // near edge set back along the recede (start ~12%), far ~60% — shorter than whites
           const n0 = proj(bx, 0.12), n1 = proj(bx2, 0.12), f0 = proj(bx, 0.6), f1 = proj(bx2, 0.6);
+          n0[1] += bDy; n1[1] += bDy; // pressed black key sinks at the front
           const bn0 = [n0[0], n0[1] + BK_DOWN], bn1 = [n1[0], n1[1] + BK_DOWN];
           const bf0 = [f0[0], f0[1] + BK_DOWN], bf1 = [f1[0], f1[1] + BK_DOWN];
-          bgCtx.fillStyle = "rgb(8,10,14)"; // body, no stroke
+          const bDown = bPress > 0.06;
+          bgCtx.fillStyle = bDown ? "rgb(46,72,88)" : "rgb(8,10,14)"; // body, no stroke
           fillHull(convexHull([n0, n1, f1, f0, bn0, bn1, bf1, bf0]));
-          bgCtx.fillStyle = "rgb(16,19,25)"; // top cap
+          bgCtx.fillStyle = bDown ? "rgb(60,92,112)" : "rgb(16,19,25)"; // top cap
           bgCtx.beginPath();
           bgCtx.moveTo(n0[0], n0[1]); bgCtx.lineTo(n1[0], n1[1]); bgCtx.lineTo(f1[0], f1[1]); bgCtx.lineTo(f0[0], f0[1]);
           bgCtx.closePath(); bgCtx.fill(); bgCtx.stroke();
