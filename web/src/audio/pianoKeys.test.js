@@ -93,14 +93,20 @@ describe("song key mapping", () => {
         }
       });
 
-      it("starts the played range at key 0 so it can be anchored", () => {
-        expect(Math.min(...left.map((n) => n.key.white))).toBe(0);
+      it("lands the played range near the bottom of the drawn keyboard", () => {
+        // Keys are ABSOLUTE white indices; keyOffset (a whole number of octaves)
+        // is what brings them onto the renderer's slots. It cannot normalise the
+        // low note to exactly 0 — doing so is what rotated every note onto a
+        // wrongly-named key — so the low note lands in a 7-slot window instead.
+        const lowSlot = Math.min(...left.map((n) => n.key.white)) - c.keyOffset;
+        expect(lowSlot).toBeGreaterThanOrEqual(2);
+        expect(lowSlot).toBeLessThanOrEqual(8);
       });
 
       it("fits inside the keys the hero actually draws", () => {
-        // The renderer draws roughly slots -6..14 at common viewport sizes and
-        // anchors the song at slot 1, so a span past ~13 would fall off-screen.
-        expect(Math.max(...left.map((n) => n.key.white))).toBeLessThanOrEqual(12);
+        // The renderer draws roughly slots -6..14 at common viewport sizes.
+        const highSlot = Math.max(...left.map((n) => n.key.white)) - c.keyOffset;
+        expect(highSlot).toBeLessThanOrEqual(14);
       });
 
       it("emits one span list per distinct key, covering every left-hand note", () => {
@@ -148,7 +154,8 @@ describe("song key mapping", () => {
     // B3 C4 D4 E4 — literally consecutive naturals.
     const c = compileSong(SONGS.find((s) => s.id === "prelude-in-c"));
     const keyOf = (midi) => c.notes.find((n) => n.hand === "L" && n.midi === midi).key;
-    expect([59, 60, 62, 64].map((m) => keyOf(m).white)).toEqual([0, 1, 2, 3]);
+    const base = keyOf(59).white;
+    expect([59, 60, 62, 64].map((m) => keyOf(m).white - base)).toEqual([0, 1, 2, 3]);
     expect([59, 60, 62, 64].map((m) => keyOf(m).black)).toEqual([false, false, false, false]);
   });
 });

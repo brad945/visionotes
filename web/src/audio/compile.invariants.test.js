@@ -25,6 +25,7 @@ describe("compile invariants", () => {
   for (const s of SONGS) {
     describe(s.id, () => {
       const c = compileSong(s);
+      const left = c.notes.filter((n) => n.hand === "L");
 
       it("never asks one finger to hold two notes at once", () => {
         // strikeAt tolerates overlap now, but on ONE finger it means the hand was
@@ -59,6 +60,33 @@ describe("compile invariants", () => {
           .filter((n) => n.hand === "L")
           .map((n) => `${keyId(n.key)}@${n.t.toFixed(4)}`);
         expect(fromKeys.sort()).toEqual(fromNotes.sort());
+      });
+
+      it("gives every event the key and finger the hand should aim at", () => {
+        // These were silently undefined for a whole revision: events were built
+        // BEFORE n.key was assigned, so `aimKey` was always missing and the
+        // renderer fell back to the old +/-26px drift. The hand simply never
+        // travelled, and nothing failed — the feature was inert, not broken.
+        for (const ev of c.events) {
+          expect(ev.aimKey, `event at t=${ev.t} has no aimKey`).toBeTruthy();
+          expect(typeof ev.aimKey.white).toBe("number");
+          expect(typeof ev.aimKey.black).toBe("boolean");
+          expect(ev.f).toContain(ev.aimFinger);
+        }
+      });
+
+      it("anchors travel on a real key", () => {
+        expect(c.aimRef).toBeTruthy();
+        const lowest = Math.min(...left.map((n) => n.key.white));
+        expect(c.aimRef.white).toBe(lowest);
+      });
+
+      it("aims at the lowest note of a chord", () => {
+        for (const ev of c.events) {
+          const atT = left.filter((n) => Math.abs(n.t - ev.t) < 1e-9);
+          const lowest = atT.reduce((lo, n) => (n.midi < lo.midi ? n : lo), atT[0]);
+          expect(ev.aimKey.white).toBe(lowest.key.white);
+        }
       });
 
       it("has a duration that outlasts every note", () => {

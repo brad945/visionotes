@@ -110,6 +110,11 @@ export const SONGS = [
 
 import { midiToKey, whiteIndex, keyId } from "./pianoKeys";
 
+// Where a song's lowest left-hand note should sit on the renderer's drawn key
+// slots. The actual placement lands between this and this+6, because the offset
+// is snapped DOWN to a whole octave to keep pitch classes aligned.
+const TARGET_LOW_SLOT = 2;
+
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
 /**
@@ -201,12 +206,6 @@ export function compileSong(song) {
     prevMidi = last.midi;
   }
 
-  // `lat` (mean finger, centred on the middle finger) drives the lateral drift.
-  const events = groups.map((g) => {
-    const f = g.map((n) => n.finger);
-    return { t: g[0].t, f, lat: f.reduce((s, x) => s + x, 0) / f.length - 2 };
-  });
-
   // Per finger: [onset, howLongItIsHeld] — NOT just onsets. A finger has to stay
   // down for as long as its note sounds, or the hand blips for a fraction of a
   // second and then sits frozen while you can still hear the note ringing.
@@ -221,23 +220,47 @@ export function compileSong(song) {
   // pianoKeys.js). Driving the press from the note instead makes the lit key a
   // pure function of the music — stable under breathing, wrist sway and resize.
   //
-  // Slots are RELATIVE to the left hand's lowest note, so slot 0 is the bottom
-  // of the played range; the renderer anchors that onto real keys. Only the left
-  // hand is mapped: it is the part with a visible hand over it, and its range
-  // fits the keys actually on screen.
+  // Keys are ABSOLUTE white-key indices. `keyOffset` is what the renderer
+  // subtracts to place them on its drawn slots, and it MUST be a whole number of
+  // octaves.
+  //
+  // The renderer's keyboard carries an implicit pitch identity: it draws a black
+  // key after every slot k where k mod 7 is one of {0,1,3,4,5}, which is the
+  // C-D-F-G-A pattern — so drawn slot k IS the natural [C,D,E,F,G,A,B][k mod 7].
+  // Shifting by anything other than a multiple of 7 rotates the whole keyboard
+  // against its own black keys, and every note lights a wrongly-named key. An
+  // earlier version anchored slot 0 on the song's lowest note, which has no
+  // relationship to C: Für Elise's G#3 came out on the key drawn as F#, and in
+  // fact all nine distinct keys across the two pieces were wrong.
   const keySpans = new Map(); // keyId -> [[onset, held], ...]
+  let keyOffset = 0;
   if (left.length) {
-    const base = whiteIndex(lo);
+    // Drop the played range down to around TARGET_LOW_SLOT, in whole octaves.
+    keyOffset = 7 * Math.floor((whiteIndex(lo) - TARGET_LOW_SLOT) / 7);
     for (const n of left) {
-      const k = midiToKey(n.midi);
-      const slot = { white: k.white - base, black: k.black };
-      n.key = slot;
-      const id = keyId(slot);
-      if (!keySpans.has(id)) keySpans.set(id, { ...slot, spans: [] });
+      n.key = midiToKey(n.midi); // absolute
+      const id = keyId(n.key);
+      if (!keySpans.has(id)) keySpans.set(id, { ...n.key, spans: [] });
       keySpans.get(id).spans.push([n.t, n.dur]);
     }
     for (const entry of keySpans.values()) entry.spans.sort((a, b) => a[0] - b[0]);
   }
+
+  // `lat` (mean finger, centred on the middle finger) is the legacy drift used by
+  // the idle phrase. `aimKey`/`aimFinger` are what a playing song uses instead:
+  // the key the hand should travel to, and which finger should land on it. The
+  // lowest note anchors a chord, as it does under a real hand.
+  const events = groups.map((g) => {
+    const f = g.map((n) => n.finger);
+    const anchor = g.reduce((lo, n) => (n.midi < lo.midi ? n : lo), g[0]);
+    return {
+      t: g[0].t,
+      f,
+      lat: f.reduce((s, x) => s + x, 0) / f.length - 2,
+      aimKey: anchor.key,
+      aimFinger: anchor.finger,
+    };
+  });
 
   // The piece is over when the LAST-ENDING note finishes — not when the last
   // note STARTS. Those differ whenever a held note is struck before shorter
@@ -247,5 +270,10 @@ export function compileSong(song) {
   const endsAt = notes.reduce((m, n) => Math.max(m, n.t + Math.max(n.dur, 0.6)), 0);
   const duration = endsAt + 0.5;
 
-  return { notes, events, strikeSpans, keys: [...keySpans.values()], duration };
+  // The key the hand's REST position corresponds to. Travel is measured as a
+  // displacement from here, so the hand moves exactly as far as the notes are
+  // apart while starting from the position the rig was designed around.
+  const aimRef = left.length ? midiToKey(lo) : null;
+
+  return { notes, events, strikeSpans, keys: [...keySpans.values()], keyOffset, aimRef, duration };
 }

@@ -18,6 +18,8 @@ export const songBus = {
   events: null, // [{ t, f: [fingerIdx], lat }] — strike events, t in SECONDS
   strikeSpans: null, // [[[onset, heldFor]…] × 5] per finger, sorted, in SECONDS
   keys: null, // Map keyId -> [[onset, heldFor]…]: which KEY is down, per note
+  keyOffset: 0, // whole octaves to subtract to reach the renderer's drawn slots
+  aimRef: null, // key the hand's rest pose corresponds to; travel is relative to it
   getTime: () => 0, // live playback position in seconds (reads the audio clock)
 };
 
@@ -29,6 +31,8 @@ export function setSongSource(compiled, getTime) {
   songBus.events = compiled.events;
   songBus.strikeSpans = compiled.strikeSpans;
   songBus.keys = new Map(compiled.keys.map((k) => [keyId(k), k.spans]));
+  songBus.keyOffset = compiled.keyOffset;
+  songBus.aimRef = compiled.aimRef;
   songBus.getTime = getTime;
   songBus.active = true;
 }
@@ -53,5 +57,7 @@ export function clearSongSource() {
   songBus.events = null;
   songBus.strikeSpans = null;
   songBus.keys = null;
+  songBus.keyOffset = 0;
+  songBus.aimRef = null;
   songBus.getTime = () => 0;
 }

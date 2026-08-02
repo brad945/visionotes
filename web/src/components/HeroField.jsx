@@ -135,14 +135,13 @@ const pianoStrike = (i, phraseT) => {
   const dtBeats = recent < 0 ? phraseT + (PIANO_PHRASE_BEATS - times[times.length - 1]) : phraseT - recent;
   return pianoEnv(dtBeats / PIANO_BPS);
 };
-// Where a song's lowest left-hand note lands on the drawn keyboard. Compiled
-// songs number their keys from 0 = the bottom of the left-hand range; this
-// offsets that onto real key slots, positioned so the played range sits under
-// the hand and stays on screen.
-const SONG_KEY_ANCHOR = 1;
 // Time constant of the song cross-fade, in seconds (~0.8s to settle). Matches
 // the feel of the old 0.08-per-frame ease at 60Hz, but holds at any framerate.
 const SONG_FADE_TAU = 0.2;
+// How hard the hand chases the key it is about to play, per frame. Notes in
+// Fuer Elise's left hand arrive ~10 frames apart at 60Hz, so this closes ~85%
+// of the gap between one note and the next — a hand moving, not teleporting.
+const SONG_AIM_EASE = 0.18;
 // The song strike envelope (press / hold for the note's length / lift) now lives
 // in ../audio/strike so it can be unit-tested — it was a private const in this
 // 1400-line component, which is why the behaviour it exists to provide had no
@@ -322,10 +321,23 @@ function chordShape(seg, curl, prof) {
 // renders under import.meta.env.DEV — it never ships; the defaults below are
 // what production shows. Keep tweaking via the panel; tell me to re-bake.
 const KB_DEFAULTS = {
-  posX: 800, posY: -122,   // screen-px offset of the whole keyboard
-  scale: 3,           // size multiplier about the (fixed) pivot
+  posX: -40, posY: 24,   // screen-px offset of the whole keyboard
+  // The keyboard used to be drawn at scale 3, which made a white key ~155px on
+  // screen while the whole hand spans ~300px — so the hand covered TWO keys
+  // where a real hand covers five, and the keyboard read as roughly 2.6x too
+  // large for its player. That is why the hand could never reach the notes it
+  // was playing: Fuer Elise's left hand spans ten white keys, which at scale 3
+  // is most of the screen. Sizing the keys to the hand is what makes travelling
+  // to a note a movement rather than a lunge.
+  scale: 1.15,        // size multiplier about the (fixed) pivot
   tiltDeg: -1,         // 2D screen tilt, DELTA from the baseline (0.2 − 9°)
-  yawDeg: -51,        // top-down 3D yaw about the left edge (− = clockwise)
+  // Opened up from -51. At -51 the slab was so nearly edge-on that each key
+  // rendered as a ~1900px-long, ~6px-tall sliver and successive keys separated
+  // mostly in DEPTH rather than across the screen — which is why the pitch axis
+  // ran 30 degrees below horizontal and a key could not be addressed by a
+  // fingertip. A gentler yaw keeps the side-on look while letting the keys read
+  // as keys and the run read as travelling along them.
+  yawDeg: -30,        // top-down 3D yaw about the left edge (− = clockwise)
   depth: 0.65,        // yaw depth/sensitivity (larger = gentler swing)
   extL: 6, extR: 4, // extra key slots added left / right
   recede: 0.42,       // how far the key-backs travel toward the vanishing point
@@ -415,6 +427,7 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
     let lungeX = 0, lungeY = 0; // eased translation of the whole model toward the Send button
     let pianoX = 0, pianoY = 0; // eased model offset for the idle piano (lateral run + wrist dip)
     let lastFrameMs = t0; // for frame-rate-independent easing
+    let lastRestTips = null; // previous frame's un-struck fingertips, for aiming
     let songFade = 0; // eased 0→1 as a song starts/stops — cross-fades the keyboard
     //                   and the playing pose. Without it the keyboard would blink in
     //                   and out in a single frame on play/pause and at every song
@@ -525,6 +538,78 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
       return [...left, ...tipCap, ...right.reverse(), ...baseCap];
     }
 
+    // ---- keyboard layout (pure; no dependence on the LIVE hand) --------------
+    // Everything here comes from the CONSTANT rest pose and the tuning knobs, so
+    // it can be computed before the hand is posed. That ordering is what lets the
+    // hand be aimed AT a key: pianoX/pianoY are set early in draw(), long before
+    // the keyboard used to be laid out.
+    function computeKeyboard() {
+      const k = kbRef.current;
+      let nMin = Infinity, nMax = -Infinity, sumY = 0;
+      for (let kf = 0; kf < FINGERS.length; kf++) {
+        const kfg = FINGERS[kf];
+        const ko = [kfg.mcp[0] + FINGER_OFFSET[0], kfg.mcp[1] + FINGER_OFFSET[1]];
+        const kj = fingerJoints(ko, kfg.rest, kfg.restCurl, kfg.seg, kfg.prof);
+        const kt = rotW(kj[kj.length - 1], -HAND_DROOP); // fixed base rotation, no live hinge
+        const kx = cx + kt[0] * unit; // base model position — no lunge/piano offsets
+        const ky = wristY - kt[1] * unit;
+        nMin = Math.min(nMin, kx);
+        nMax = Math.max(nMax, kx);
+        sumY += ky;
+      }
+      const margin = 0.22 * unit + 2 * PIANO_SHIFT;
+      const kbLeft = nMin - margin;
+      const kbW = nMax - nMin + 2 * margin;
+      const nearY = sumY / FINGERS.length + 0.02 * unit; // front edge — where fingers press
+      const faceH = 0.1 * unit; // key thickness / front+side face height
+      const nWhite = Math.max(7, Math.round(kbW / (0.115 * unit)));
+      const wKeyW = kbW / nWhite;
+      const EXT_L = k.extL, EXT_R = k.extR;
+      const vpX = kbLeft + kbW * k.vpXf;
+      const vpY = nearY - k.vpYf * unit;
+      const recede = k.recede;
+      const pivotXk = kbLeft - EXT_L * wKeyW; // leftmost near-edge x (the yaw pivot)
+      const rightXk = kbLeft + (nWhite + EXT_R) * wKeyW;
+      const Uspan = rightXk - pivotXk || 1;
+      const cur0 = (X, w) => [X + (vpX - X) * w * recede, nearY + (vpY - nearY) * w * recede];
+      const kbH = squareToQuad([cur0(pivotXk, 0), cur0(rightXk, 0), cur0(rightXk, 1), cur0(pivotXk, 1)]);
+      const KB_DEPTH = k.depth;
+      const KB_YAW = k.yawDeg * DEG;
+      const yc = Math.cos(KB_YAW), ys = Math.sin(KB_YAW);
+      const projUV = (u, v) => {
+        const Xw = u, Zw = v * KB_DEPTH;
+        const ur = Xw * yc - Zw * ys;
+        const vr = (Xw * ys + Zw * yc) / KB_DEPTH;
+        return applyH(kbH, ur, clamp(vr, -3, 1.7));
+      };
+      const proj = (X, w) => projUV((X - pivotXk) / Uspan, w);
+      const tbL = rotW([FINGERS[0].mcp[0] + FINGER_OFFSET[0], FINGERS[0].mcp[1] + FINGER_OFFSET[1]], -HAND_DROOP);
+      const pcx = cx + tbL[0] * unit, pcy = wristY - tbL[1] * unit;
+      const kbTilt = 0.2 - 9 * DEG + k.tiltDeg * DEG;
+      const kbCos = Math.cos(kbTilt), kbSin = Math.sin(kbTilt);
+      const toScreen = (pt) => {
+        const sx = (pt[0] - pcx) * k.scale;
+        const sy = (pt[1] - pcy) * k.scale;
+        return [k.posX + pcx + sx * kbCos - sy * kbSin, k.posY + pcy + sx * kbSin + sy * kbCos];
+      };
+      // Where a given key sits on screen, at the near edge where a finger presses.
+      // A black key sits between white `slot` and `slot + 1`.
+      //
+      // Both use the SAME shallow depth. The keyboard recedes steeply and is then
+      // scaled 3x, so depth dominates screen position: aiming a black key even
+      // slightly further back (0.3 vs 0.1) threw its target 1377px sideways and
+      // the hand lunged off the keyboard for every accidental. Fingers press near
+      // the front edge of whatever key they are on, so front is also the honest
+      // place to aim.
+      const KEY_PRESS_DEPTH = 0.1;
+      const keyPoint = (slot, black) => {
+        const x = black ? kbLeft + (slot + 1) * wKeyW : kbLeft + (slot + 0.5) * wKeyW;
+        return toScreen(proj(x, KEY_PRESS_DEPTH));
+      };
+      return { k, kbLeft, kbW, nearY, faceH, nWhite, wKeyW, EXT_L, EXT_R, proj, toScreen, keyPoint, pcx, pcy, kbTilt };
+    }
+
+
 
     function draw() {
       const now = performance.now();
@@ -559,6 +644,8 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
       // Song mode: the piano player is playing a piece. Sampled ONCE per frame so
       // every consumer below sees a consistent value, and the clock is read live
       // off the AudioContext so each strike lands on the note you actually hear.
+      // Laid out BEFORE the hand is posed, so the hand can be aimed at a key.
+      const kbGeom = computeKeyboard();
       const songHeld = !!songBus.strikeSpans && !!songBus.events; // data attached (may be suspended)
       const songActive = songBus.active && songHeld;
       // Read the clock whenever a song is ATTACHED, not only while it plays.
@@ -653,6 +740,7 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
       const handFrozen = inMorphSeq; // freeze the hand pose so the dots hold + resume cleanly
       const phraseT = (t * PIANO_BPS) % PIANO_PHRASE_BEATS;
       const pianoFlexArr = [0, 0, 0, 0, 0];
+      let songAim = null;
       let hingeTarget = 0;
       if (pianoGate > 0.01) {
         let strkSum = 0;
@@ -672,6 +760,7 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
             else break;
           }
           latTarget = recentEv ? recentEv.lat : 0;
+          songAim = recentEv || null; // the note the hand should be reaching for
           for (let si = 0; si < 5; si++) {
             pianoFlexArr[si] = strikeAt(songBus.strikeSpans[si], songT);
             strkSum += pianoFlexArr[si];
@@ -688,8 +777,30 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
             strkSum += pianoFlexArr[si];
           }
         }
-        pianoX += (latTarget * PIANO_SHIFT * pianoGate - pianoX) * 0.07;
-        pianoY += (Math.min(strkSum, 1.6) * PIANO_DROP * pianoGate - pianoY) * 0.3;
+        if (songAim && songAim.aimKey && songBus.aimRef) {
+          // TRAVEL TO THE NOTE. The hand used to be nudged by lat*PIANO_SHIFT — a
+          // fixed +/-26px, about one key slot, while Fuer Elise's left hand spans
+          // ten. So it barely moved and never followed the music.
+          //
+          // Move by the key's DISPLACEMENT from the song's lowest note, not to the
+          // key's absolute position. Aiming a fingertip at absolute key coordinates
+          // looks correct on paper but hurls the hand hundreds of pixels away from
+          // the pose the rig was built around, because the hand's rest position and
+          // the keyboard's origin are unrelated. A displacement keeps the hand at
+          // home for the lowest note and moves it exactly as far as the notes are
+          // apart — which at this tuning is ~90px across and ~200px down.
+          const ref = kbGeom.keyPoint(
+            songBus.aimRef.white - songBus.keyOffset, songBus.aimRef.black,
+          );
+          const cur = kbGeom.keyPoint(
+            songAim.aimKey.white - songBus.keyOffset, songAim.aimKey.black,
+          );
+          pianoX += ((cur[0] - ref[0]) * pianoGate - pianoX) * SONG_AIM_EASE;
+          pianoY += ((cur[1] - ref[1]) * pianoGate - pianoY) * SONG_AIM_EASE;
+        } else {
+          pianoX += (latTarget * PIANO_SHIFT * pianoGate - pianoX) * 0.07;
+          pianoY += (Math.min(strkSum, 1.6) * PIANO_DROP * pianoGate - pianoY) * 0.3;
+        }
         // wrist hinges: a slow undulation + a flex DOWN on each strike (weight).
         hingeTarget = (Math.sin(t * 0.4) * WRIST_SWAY - Math.min(strkSum, 1.5) * WRIST_FLEX) * pianoGate;
       } else if (!handFrozen) {
@@ -900,6 +1011,12 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
         });
       }
 
+      // Remember the UN-STRUCK fingertips, indexed by finger. The next frame aims
+      // the hand with these: they are the tip positions without the strike curl,
+      // so a finger pressing down cannot drag the whole hand after it.
+      lastRestTips = [];
+      fingerJobs.forEach((job, idx) => { lastRestTips[order[idx]] = job.restTip; });
+
       // --- Idle piano keyboard: fades in with the idle pose. Drawn HERE so it sits
       // UNDER the hand. The keyboard is fixed (so the lateral run reads as the hand
       // moving along the keys) and the key under each striking fingertip sinks in
@@ -916,73 +1033,22 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
         }));
         // Song-driven key press. Returns null when no song is playing, so the
         // caller falls back to the geometric hit-test for the idle phrase.
-        // Slots in the compiled song are relative to the left hand's lowest note;
-        // SONG_KEY_ANCHOR places that note on a real drawn key, under the hand.
         const songKeyPress = (whiteSlot, black) => {
           if (!songActive || !songBus.keys) return null;
+          // Drawn slot -> ABSOLUTE white-key index. The offset is a whole number
+          // of octaves precisely so this addition preserves pitch class: the
+          // renderer's own black-key pattern makes drawn slot k the natural
+          // [C,D,E,F,G,A,B][k mod 7], so any non-multiple-of-7 shift rotates
+          // every note onto a wrongly-named key.
           const spans = songBus.keys.get(
-            (black ? "b" : "w") + (whiteSlot - SONG_KEY_ANCHOR),
+            (black ? "b" : "w") + (whiteSlot + songBus.keyOffset),
           );
           return spans ? strikeAt(spans, songT) : 0;
         };
         // Keyboard SIZE/POSITION is computed from the CONSTANT rest pose (fixed angles, base
         // hand rotation, NO breathing / wrist-hinge / run / dip), so it NEVER changes size or
         // place — the hand just plays over a fixed keyboard. (Live `tips` only sink struck keys.)
-        let nMin = Infinity, nMax = -Infinity, sumY = 0;
-        for (let kf = 0; kf < FINGERS.length; kf++) {
-          const kfg = FINGERS[kf];
-          const ko = [kfg.mcp[0] + FINGER_OFFSET[0], kfg.mcp[1] + FINGER_OFFSET[1]];
-          const kj = fingerJoints(ko, kfg.rest, kfg.restCurl, kfg.seg, kfg.prof);
-          const kt = rotW(kj[kj.length - 1], -HAND_DROOP); // fixed base rotation, no live hinge
-          const kx = cx + kt[0] * unit; // base model position — no lunge/piano offsets
-          const ky = wristY - kt[1] * unit;
-          nMin = Math.min(nMin, kx);
-          nMax = Math.max(nMax, kx);
-          sumY += ky;
-        }
-        const margin = 0.22 * unit + 2 * PIANO_SHIFT;
-        const kbLeft = nMin - margin;
-        const kbW = nMax - nMin + 2 * margin;
-        const nearY = sumY / FINGERS.length + 0.02 * unit; // front (near) edge — where the fingers press
-        const faceH = 0.1 * unit; // key thickness / front+side face height (taller = more solid 3D)
-        const nWhite = Math.max(7, Math.round(kbW / (0.115 * unit)));
-        const wKeyW = kbW / nWhite;
-        // EXTEND: extra white keys added to the LEFT and RIGHT. The VP / perspective / wKeyW
-        // below are ALL from the ORIGINAL keyboard and left UNCHANGED — we just draw more key
-        // slots (k from -EXT_L .. nWhite+EXT_R) with that same fixed mapping, so the original
-        // keys stay pixel-identical and the new ones are exact copies.
-        const EXT_L = k.extL, EXT_R = k.extR;
-        // SIDE VIEW (like watching a pianist from the side): the keyboard recedes off
-        // into the distance to the RIGHT, so the vanishing point is far to the right and
-        // only slightly up — the keys angle sideways rather than facing forward.
-        const vpX = kbLeft + kbW * k.vpXf;
-        const vpY = nearY - k.vpYf * unit;
-        const recede = k.recede; // how far the key backs travel toward the VP
-        // TRUE-PERSPECTIVE keyboard: fit a projective homography H to TODAY'S four corners
-        // (so yaw=0 is pixel-identical along the white keys), and apply a TOP-DOWN YAW about
-        // the LEFT-FRONT corner as a metric in-plane rotation BEFORE H. homography ∘ rotation
-        // keeps every edge perfectly STRAIGHT (a real camera yaw), unlike the old bilinear
-        // map which bowed them. u = along-slab [0..1], v = key depth [0=front..1=back].
-        const pivotXk = kbLeft - EXT_L * wKeyW; // leftmost near-edge x (the yaw pivot)
-        const rightXk = kbLeft + (nWhite + EXT_R) * wKeyW; // right near-edge x
-        const Uspan = rightXk - pivotXk || 1;
-        const cur0 = (X, w) => [X + (vpX - X) * w * recede, nearY + (vpY - nearY) * w * recede]; // today's map
-        const kbH = squareToQuad([cur0(pivotXk, 0), cur0(rightXk, 0), cur0(rightXk, 1), cur0(pivotXk, 1)]);
-        const KB_DEPTH = k.depth; // yaw sensitivity; floor (0.15) keeps small-depth+high-yaw from
-        // saturating the vr clamp (vr = u·sinθ/depth + v·cosθ; depth cancels in the v-term, so this
-        // is clamp-saturation under yaw amplification, NOT a divide-by-zero — depth never divides v).
-        const KB_YAW = k.yawDeg * DEG; // top-down yaw about the LEFT edge; − = clockwise (chosen by eye)
-        const yc = Math.cos(KB_YAW), ys = Math.sin(KB_YAW);
-        const projUV = (u, v) => {
-          const Xw = u, Zw = v * KB_DEPTH;
-          const ur = Xw * yc - Zw * ys; // rotate in the metric ground plane about (0,0)=left-front corner
-          const vr = (Xw * ys + Zw * yc) / KB_DEPTH; // renormalize depth back to homography v-units
-          // Only the FAR side (large +v) has a projective horizon (~1.82) to stay shy of; the NEAR
-          // side (−v, in front of the keyboard) has none, so allow it to run well forward — strong
-          // yaw pulls the near corner toward the viewer and a tight floor would slice it flat.
-          return applyH(kbH, ur, clamp(vr, -3, 1.7));
-        };
-        const proj = (X, w) => projUV((X - pivotXk) / Uspan, w); // by near-edge X (drop-in)
+        const { kbLeft, kbW, nearY, faceH, nWhite, wKeyW, EXT_L, EXT_R, proj, toScreen } = kbGeom;
         bgCtx.save();
         // OPAQUE keys, faded by pianoGate so the keyboard fades in/out with piano mode
         // (only the fade uses alpha): otherwise the page background bleeds through and, on
@@ -991,14 +1057,12 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
         // rotate the keyboard CLOCKWISE around the (FIXED) base of the thumb. Use the
         // CONSTANT rest-pose thumb MCP so the pivot never moves → the whole keyboard is
         // stable in size AND place (not tied to the live, breathing thumb).
-        const tbL = rotW([FINGERS[0].mcp[0] + FINGER_OFFSET[0], FINGERS[0].mcp[1] + FINGER_OFFSET[1]], -HAND_DROOP);
-        const pcx = cx + tbL[0] * unit, pcy = wristY - tbL[1] * unit;
+        const { pcx, pcy, kbTilt } = kbGeom;
         // Position / tilt / scale as ONE rigid transform (canvas post-multiplies, so the LAST call
         // is the FIRST transform a point sees): posX/posY is OUTERMOST → a pure screen-px offset,
         // unaffected by tilt/scale. Tilt + uniform scale share the fixed pivot (pcx,pcy) so they
         // commute and the keyboard never drifts. Yaw is NOT here — it lives inside proj() as the
         // metric ground-plane rotation before the homography.
-        const kbTilt = 0.2 - 9 * DEG + k.tiltDeg * DEG; // baseline tilt (+ = CW) plus the panel delta
         bgCtx.translate(k.posX, k.posY);
         bgCtx.translate(pcx, pcy);
         bgCtx.rotate(kbTilt);
@@ -1013,15 +1077,6 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
         // visibly went down while the hand played: the piano looked dead against the
         // audio. Order matters — canvas post-multiplies, so a point is scaled about
         // the pivot, then rotated, then offset.
-        const kbCos = Math.cos(kbTilt), kbSin = Math.sin(kbTilt);
-        const toScreen = (p) => {
-          const sx = (p[0] - pcx) * k.scale;
-          const sy = (p[1] - pcy) * k.scale;
-          return [
-            k.posX + pcx + sx * kbCos - sy * kbSin,
-            k.posY + pcy + sx * kbSin + sy * kbCos,
-          ];
-        };
         // Each key is drawn as a SOLID extruded block = body (silhouette) + top cap + front lip.
         // The body is the convex hull of the 8 box corners (4 top + 4 dropped straight down by
         // faceH). Because adjacent keys share their boundary corners exactly, neighbouring bodies
