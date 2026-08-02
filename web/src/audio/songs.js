@@ -55,26 +55,40 @@ export const SONGS = [
     id: "fur-elise",
     title: "Für Elise",
     composer: "Beethoven",
-    step: 0.165, // one sixteenth
-    // Melody in the right hand; the left hand answers with the A-minor and
-    // E-major arpeggios that sit under it.
+    step: 0.165, // one sixteenth; 3/8, so a measure is 6 units
+    // Transcribed from the Mutopia Project LilyPond source (typeset from
+    // Breitkopf & Härtel, 1888), anacrusis through m. 8. Two independent
+    // transcriptions agreed on all 53 notes.
+    //
+    // Two things here were previously wrong and are worth stating so they are
+    // not "corrected" back. (1) The LH arpeggio enters ON the downbeat, at the
+    // same instant as the RH's A4 — not later in the bar. (2) The ascending
+    // C4-E4-A4 and E4-G#4-B4 figures are RIGHT hand, notated in the treble
+    // staff; they are low, which is what makes them look like left-hand
+    // material. Assigning them to the LH is what pushed the real LH part late.
     notes: [
+      // pickup + m1 — RH: E D# E D# E B D C
       [0, 76, 1, "R"], [1, 75, 1, "R"], [2, 76, 1, "R"], [3, 75, 1, "R"],
       [4, 76, 1, "R"], [5, 71, 1, "R"], [6, 74, 1, "R"], [7, 72, 1, "R"],
-      [8, 69, 3, "R"],
-      [11, 45, 1, "L"], [12, 52, 1, "L"], [13, 57, 1, "L"], // A2 E3 A3
-      [14, 71, 3, "R"],
-      [17, 40, 1, "L"], [18, 52, 1, "L"], [19, 56, 1, "L"], // E2 E3 G#3
-      [20, 72, 3, "R"],
-      [23, 45, 1, "L"],
+      // m2 — RH A4 over the LH A-minor arpeggio, struck together
+      [8, 69, 2, "R"], [8, 45, 1, "L"], [9, 52, 1, "L"], [10, 57, 1, "L"],
+      [11, 60, 1, "R"], [12, 64, 1, "R"], [13, 69, 1, "R"], // RH C4 E4 A4
+      // m3 — RH B4 over the LH E-major arpeggio
+      [14, 71, 2, "R"], [14, 40, 1, "L"], [15, 52, 1, "L"], [16, 56, 1, "L"],
+      [17, 64, 1, "R"], [18, 68, 1, "R"], [19, 71, 1, "R"], // RH E4 G#4 B4
+      // m4 — RH C5, LH back to A minor
+      [20, 72, 2, "R"], [20, 45, 1, "L"], [21, 52, 1, "L"], [22, 57, 1, "L"],
+      [23, 64, 1, "R"],
+      // m5-m6 — the opening figure returns
       [24, 76, 1, "R"], [25, 75, 1, "R"], [26, 76, 1, "R"], [27, 75, 1, "R"],
       [28, 76, 1, "R"], [29, 71, 1, "R"], [30, 74, 1, "R"], [31, 72, 1, "R"],
-      [32, 69, 3, "R"],
-      [35, 45, 1, "L"], [36, 52, 1, "L"], [37, 57, 1, "L"],
-      [38, 71, 3, "R"],
-      [41, 40, 1, "L"], [42, 52, 1, "L"], [43, 56, 1, "L"],
-      [44, 72, 1, "R"], [45, 71, 1, "R"],
-      [46, 69, 6, "R"], [46, 45, 6, "L"], // land together on the tonic
+      [32, 69, 2, "R"], [32, 45, 1, "L"], [33, 52, 1, "L"], [34, 57, 1, "L"],
+      [35, 60, 1, "R"], [36, 64, 1, "R"], [37, 69, 1, "R"],
+      // m7
+      [38, 71, 2, "R"], [38, 40, 1, "L"], [39, 52, 1, "L"], [40, 56, 1, "L"],
+      [41, 64, 1, "R"], [42, 72, 1, "R"], [43, 71, 1, "R"],
+      // m8 — cadence on A
+      [44, 69, 4, "R"], [44, 45, 1, "L"], [45, 52, 1, "L"], [46, 57, 1, "L"],
     ],
   },
   {
@@ -186,9 +200,13 @@ export function compileSong(song) {
   for (const g of groups) for (const n of g) strikeSpans[n.finger].push([n.t, n.dur]);
   for (const arr of strikeSpans) arr.sort((a, b) => a[0] - b[0]);
 
-  // Let the last note ring out rather than cutting the piece off on its attack.
-  const last = notes[notes.length - 1];
-  const duration = last.t + Math.max(last.dur, 0.6) + 0.5;
+  // The piece is over when the LAST-ENDING note finishes — not when the last
+  // note STARTS. Those differ whenever a held note is struck before shorter
+  // ones: Für Elise's closing A4 is struck on the downbeat and rings under the
+  // three-note LH arpeggio that follows it, so keying off the final onset would
+  // cut the piece off while its own last chord was still sounding.
+  const endsAt = notes.reduce((m, n) => Math.max(m, n.t + Math.max(n.dur, 0.6)), 0);
+  const duration = endsAt + 0.5;
 
   return { notes, events, strikeSpans, duration };
 }
