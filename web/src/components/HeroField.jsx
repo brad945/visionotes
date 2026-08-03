@@ -103,7 +103,26 @@ const PIANO_PHRASE = [
 ];
 const PIANO_PHRASE_BEATS = 25.2; // loop length in beats (~2× longer)
 const PIANO_BPS = 3.4; // beats per second (tempo) — 4× the original 0.85
-const PIANO_CURL = 7 * DEG; // per-knuckle flex at a key strike
+// HOW A STRUCK FINGER MOVES. A finger pressing a key REACHES INTO it: it swings
+// down at the knuckle and straightens as it goes, so the tip travels toward the
+// key. This used to be a tighter CURL, which pulls the fingertip away from the
+// very key it is supposed to be depressing — the opposite of playing.
+//
+// Per finger, because they do not behave alike. The thumb and pinky are the
+// short ones: they visibly stretch to cover notes the long fingers reach without
+// effort, and that stretch is a lot of what reads as "playing" rather than
+// "tapping". The thumb gets no straightening — it rests straight already, and
+// extending it further bends it backwards at the joint.
+// Measured, not assumed: the knuckle swing is what carries the tip DOWN onto the
+// key. Straightening barely helps and can even work against it — the long
+// fingers rest curled UNDER, so unrolling them sends the tip back up and forward
+// (measured: 13px across, 1px down on the index). It is kept small, for the look
+// of a finger extending into the note rather than as the thing doing the work.
+//                       thumb  index  middle  ring  pinky
+const PIANO_REACH  = [12, 7, 6, 7, 17].map((d) => d * DEG);   // knuckle swings down
+const PIANO_EXTEND = [0, 2, 1.5, 2, 7].map((d) => d * DEG);   // finger straightens
+// The pinky needs a bigger angle than the thumb for a comparable reach: it rests
+// more curled and its bones are shorter, so the same swing buys less travel.
 const PIANO_SHIFT = 13; // px the hand drifts laterally per finger-step (arm follows the run)
 const PIANO_DROP = 0; // 0 = the whole hand does NOT translate down on strikes (kept the
 //                       finger-press curl + lateral drift; this dip made the hand sink)
@@ -1031,8 +1050,14 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
         // crisp): the index dips on a Send-link click, and in the idle pose every
         // finger "plays piano" — striking down on its own drifting rhythm.
         const pressBase = i === 1 ? clickPress * CLICK_DROP : 0;
-        const pianoFlex = pianoFlexArr[i] * PIANO_CURL * pianoGate; // idle key strike for this finger
-        const joints = fingerJoints(origin, st.base - pressBase, st.curl - pianoFlex, f.seg, f.prof);
+        // Reach into the key: swing down at the knuckle AND straighten. Curl is
+        // negative for a finger curled under, so ADDING moves it toward straight.
+        const strike = pianoFlexArr[i] * pianoGate;
+        const reach = strike * PIANO_REACH[i];
+        const extend = strike * PIANO_EXTEND[i];
+        const joints = fingerJoints(
+          origin, st.base - pressBase - reach, st.curl + extend, f.seg, f.prof,
+        );
         const contour = smoothClosed(fingerContour(joints, f.w), 2).map(drp);
         // rest (un-struck) tip: same finger WITHOUT the piano strike / click press, so the
         // keyboard can be sized off a stable anchor instead of the jittering live tip.
@@ -1073,7 +1098,15 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
         // import.meta.env.DEV is compiled out — and only runs under ?rafshim=1.
         if (import.meta.env.DEV && window.__rafShim) {
           const probe = { pianoX, pianoY, tips: {}, keys: {} };
-          fingerJobs.forEach((job, idx) => { probe.tips[order[idx]] = job.restTip; });
+          fingerJobs.forEach((job, idx) => {
+            probe.tips[order[idx]] = job.restTip;
+            // live (struck) tip vs rest tip: how far the strike actually reaches
+            probe.reach = probe.reach || {};
+            probe.reach[order[idx]] = [
+              Math.round(job.tip[0] - job.restTip[0]),
+              Math.round(job.tip[1] - job.restTip[1]),
+            ];
+          });
           if (songBus.keys) {
             for (const id of songBus.keys.keys()) {
               const black = id[0] === "b";
