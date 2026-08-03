@@ -119,8 +119,14 @@ const PIANO_BPS = 3.4; // beats per second (tempo) — 4× the original 0.85
 // (measured: 13px across, 1px down on the index). It is kept small, for the look
 // of a finger extending into the note rather than as the thing doing the work.
 //                       thumb  index  middle  ring  pinky
-const PIANO_REACH  = [12, 7, 6, 7, 17].map((d) => d * DEG);   // knuckle swings down
-const PIANO_EXTEND = [0, 2, 1.5, 2, 7].map((d) => d * DEG);   // finger straightens
+const PIANO_REACH  = [14, 13, 12, 13, 18].map((d) => d * DEG); // knuckle swings down
+const PIANO_EXTEND = [0, 3, 2.5, 3, 7].map((d) => d * DEG);    // finger straightens
+// Idle fingers HOVER. What the eye reads is contrast against the neighbours, not
+// absolute depth — measured, the index dropped 27px while the ring sat at 18px,
+// leaving 9px of difference, which is why that note looked like it never moved.
+// Lifting the fingers that are not playing roughly doubles the separation for
+// free, and it is what a pianist's hand actually does between notes.
+const PIANO_HOVER = [4, 4, 4, 4, 4].map((d) => d * DEG);
 // The pinky needs a bigger angle than the thumb for a comparable reach: it rests
 // more curled and its bones are shorter, so the same swing buys less travel.
 const PIANO_SHIFT = 13; // px the hand drifts laterally per finger-step (arm follows the run)
@@ -171,10 +177,9 @@ const SONG_AIM_MAX_SPEED = 1500;
 // frame — a per-frame coefficient smooths far less on a slow loop than a fast
 // one, so the motion would differ between displays and, more insidiously, any
 // measurement taken on a throttled loop would understate the real thing.
-// Time constant of the follow, seconds. At 60fps this reaches ~99% of the
-// target within one of Für Elise's 0.165s arpeggio notes, so smoothing costs
-// nothing in tracking; it only spreads the move across the frames available.
-const SONG_AIM_SMOOTH_TAU = 0.03;
+// Roughly how long the hand takes to settle on a new note, in seconds. Drives a
+// critically damped spring, so this is a settling time, not a time constant.
+const SONG_AIM_SETTLE = 0.22;
 // How far the hand may travel from its rest pose while playing, in px. Sized to
 // keep the whole hand in shot at the login splash's framing.
 // Travel bounds, and they are deliberately lopsided. Measured at this framing,
@@ -465,7 +470,8 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
     let pianoX = 0, pianoY = 0; // eased model offset for the idle piano (lateral run + wrist dip)
     let lastFrameMs = t0; // for frame-rate-independent easing
     let lastRestTips = null; // previous frame's un-struck fingertips, for aiming
-    let aimTargetX = 0, aimTargetY = 0; // exact aim target; the drawn hand eases to it
+    let aimTargetX = 0, aimTargetY = 0; // exact aim target; the drawn hand springs to it
+    let aimVelX = 0, aimVelY = 0; // spring velocity, px/sec
     let songFade = 0; // eased 0→1 as a song starts/stops — cross-fades the keyboard
     //                   and the playing pose. Without it the keyboard would blink in
     //                   and out in a single frame on play/pause and at every song
@@ -880,14 +886,27 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
           // hand may travel. The ceiling is what stops a large interval — or a
           // frame the loop was starved through — resolving in one step, which
           // reads as a teleport rather than a hand moving.
-          const sm = 1 - Math.exp(-frameDt / SONG_AIM_SMOOTH_TAU);
-          let dx = (aimTargetX - pianoX) * sm;
-          let dy = (aimTargetY - pianoY) * sm;
-          const mag = Math.hypot(dx, dy);
-          const cap = SONG_AIM_MAX_SPEED * frameDt;
-          if (mag > cap) { dx *= cap / mag; dy *= cap / mag; }
-          pianoX += dx;
-          pianoY += dy;
+          // Follow with a CRITICALLY DAMPED SPRING, not an exponential ease.
+          // Exponential smoothing is fastest at the instant the target moves and
+          // decays from there — the hand leaves at full speed and coasts in,
+          // which is precisely the lurch. A spring starts from rest, accelerates
+          // and decelerates, and settles without overshoot: continuous velocity,
+          // so there is nothing to read as a jump.
+          //
+          // It can afford to be leisurely. The lit key is driven by the NOTE, so
+          // a hand still gliding into place does not light the wrong key — the
+          // worst case is the hand arriving a little after its own note, which
+          // is what a real hand does anyway.
+          const w = 2 / SONG_AIM_SETTLE; // natural frequency for critical damping
+          aimVelX += (w * w * (aimTargetX - pianoX) - 2 * w * aimVelX) * frameDt;
+          aimVelY += (w * w * (aimTargetY - pianoY) - 2 * w * aimVelY) * frameDt;
+          const sp = Math.hypot(aimVelX, aimVelY);
+          if (sp > SONG_AIM_MAX_SPEED) {
+            aimVelX *= SONG_AIM_MAX_SPEED / sp;
+            aimVelY *= SONG_AIM_MAX_SPEED / sp;
+          }
+          pianoX += aimVelX * frameDt;
+          pianoY += aimVelY * frameDt;
           // Bound the travel. The loop above only knows about slots, not about
           // staying in shot, and because the fingers are spread ACROSS the keys
           // while the keys stack ALONG the view, the hand position needed to put
@@ -1099,8 +1118,9 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
         const strike = pianoFlexArr[i] * pianoGate;
         const reach = strike * PIANO_REACH[i];
         const extend = strike * PIANO_EXTEND[i];
+        const hover = (1 - strike) * pianoGate * PIANO_HOVER[i]; // lift when idle
         const joints = fingerJoints(
-          origin, st.base - pressBase - reach, st.curl + extend, f.seg, f.prof,
+          origin, st.base - pressBase - reach + hover, st.curl + extend, f.seg, f.prof,
         );
         const contour = smoothClosed(fingerContour(joints, f.w), 2).map(drp);
         // rest (un-struck) tip: same finger WITHOUT the piano strike / click press, so the
