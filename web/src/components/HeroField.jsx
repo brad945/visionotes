@@ -160,7 +160,21 @@ const SONG_FADE_TAU = 0.2;
 // How hard the hand chases the key it is about to play, per frame. Notes in
 // Fuer Elise's left hand arrive ~10 frames apart at 60Hz, so this closes ~85%
 // of the gap between one note and the next — a hand moving, not teleporting.
-const SONG_AIM_EASE = 0.18;
+// Time constant of the reach toward a note, in seconds. Für Elise's arpeggio
+// runs a note every 0.165s, so this has to arrive quickly — but on the clock,
+// not per frame.
+const SONG_AIM_TAU = 0.05;
+// Ceiling on how fast the hand may travel, px/sec. Bounds the lurch when the
+// interval is large or the loop has been starved.
+const SONG_AIM_MAX_SPEED = 1500;
+// Time constant of the velocity filter, in seconds. On the WALL CLOCK, not per
+// frame — a per-frame coefficient smooths far less on a slow loop than a fast
+// one, so the motion would differ between displays and, more insidiously, any
+// measurement taken on a throttled loop would understate the real thing.
+// Time constant of the follow, seconds. At 60fps this reaches ~99% of the
+// target within one of Für Elise's 0.165s arpeggio notes, so smoothing costs
+// nothing in tracking; it only spreads the move across the frames available.
+const SONG_AIM_SMOOTH_TAU = 0.03;
 // How far the hand may travel from its rest pose while playing, in px. Sized to
 // keep the whole hand in shot at the login splash's framing.
 // Travel bounds, and they are deliberately lopsided. Measured at this framing,
@@ -451,6 +465,7 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
     let pianoX = 0, pianoY = 0; // eased model offset for the idle piano (lateral run + wrist dip)
     let lastFrameMs = t0; // for frame-rate-independent easing
     let lastRestTips = null; // previous frame's un-struck fingertips, for aiming
+    let aimTargetX = 0, aimTargetY = 0; // exact aim target; the drawn hand eases to it
     let songFade = 0; // eased 0→1 as a song starts/stops — cross-fades the keyboard
     //                   and the playing pose. Without it the keyboard would blink in
     //                   and out in a single frame on play/pause and at every song
@@ -837,13 +852,42 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
           // wherever it is, and it optimises exactly the property being judged.
           const want = songAim.aimKey.white - songBus.keyOffset;
           const tip = lastRestTips[songAim.aimFinger];
-          const at = kbGeom.slotAt(tip);
+          // Correctness and smoothness are separated, because tying them
+          // together forces a choice between the two: enough filtering to stop
+          // the hand lurching also stops it arriving in time for the next note.
+          //
+          // The closed loop converges an exact TARGET, and the drawn hand eases
+          // toward that target. Crucially the slot error is evaluated at where
+          // the target is, NOT where the hand currently is — feeding back on the
+          // lagging rendered position would keep reporting an error the target
+          // has already corrected, and the target would wind up and overshoot.
+          const tipAtTarget = [tip[0] + (aimTargetX - pianoX), tip[1] + (aimTargetY - pianoY)];
+          const at = kbGeom.slotAt(tipAtTarget);
           if (at !== null) {
+            // Integer slot error, deliberately. A fractional coordinate was
+            // tried and is unsound: a fingertip sits far along a key's LENGTH,
+            // so projecting that offset onto the next-key vector picks up
+            // cross-talk. It took tracking from 6 of 7 aims to 0.
             const err = want - at;
             const step = kbGeom.slotStep(at);
-            pianoX += err * step[0] * SONG_AIM_EASE * pianoGate;
-            pianoY += err * step[1] * SONG_AIM_EASE * pianoGate;
+            const k = 1 - Math.exp(-frameDt / SONG_AIM_TAU);
+            aimTargetX += err * step[0] * k * pianoGate;
+            aimTargetY += err * step[1] * k * pianoGate;
           }
+          aimTargetX = clamp(aimTargetX, -SONG_AIM_REACH_X, SONG_AIM_REACH_X);
+          aimTargetY = clamp(aimTargetY, -SONG_AIM_REACH_Y, SONG_AIM_REACH_Y);
+          // Follow the target on the wall clock, with a ceiling on how fast the
+          // hand may travel. The ceiling is what stops a large interval — or a
+          // frame the loop was starved through — resolving in one step, which
+          // reads as a teleport rather than a hand moving.
+          const sm = 1 - Math.exp(-frameDt / SONG_AIM_SMOOTH_TAU);
+          let dx = (aimTargetX - pianoX) * sm;
+          let dy = (aimTargetY - pianoY) * sm;
+          const mag = Math.hypot(dx, dy);
+          const cap = SONG_AIM_MAX_SPEED * frameDt;
+          if (mag > cap) { dx *= cap / mag; dy *= cap / mag; }
+          pianoX += dx;
+          pianoY += dy;
           // Bound the travel. The loop above only knows about slots, not about
           // staying in shot, and because the fingers are spread ACROSS the keys
           // while the keys stack ALONG the view, the hand position needed to put

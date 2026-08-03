@@ -31,15 +31,22 @@ export function installRafShim() {
 
   window.requestAnimationFrame = (cb) => {
     const id = nextId++;
-    const timer = setTimeout(() => {
+    // `paused` lets tooling freeze the canvas on an interesting frame and
+    // screenshot it. It must KEEP RESCHEDULING while held, or the loop simply
+    // terminates: a draw loop only survives because each frame asks for the
+    // next, so a callback that returns without running is the end of it, and
+    // clearing the flag afterwards revives nothing. That cost real debugging
+    // time — a dead loop is indistinguishable from a frozen animation.
+    const tick = () => {
+      if (window.__rafShim.paused) {
+        pending.set(id, setTimeout(tick, 50));
+        return;
+      }
       pending.delete(id);
-      // `paused` lets tooling freeze the canvas on an interesting frame and
-      // screenshot it, instead of racing a live loop.
-      if (window.__rafShim.paused) return;
       window.__rafShim.frames++;
       cb(performance.now());
-    }, 0);
-    pending.set(id, timer);
+    };
+    pending.set(id, setTimeout(tick, 0));
     return id;
   };
 
