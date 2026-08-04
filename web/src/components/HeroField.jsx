@@ -182,6 +182,9 @@ const SONG_AIM_MAX_SPEED = 3.33; // × unit, per second
 // Roughly how long the hand takes to settle on a new note, in seconds. Drives a
 // critically damped spring, so this is a settling time, not a time constant.
 const SONG_AIM_SETTLE = 0.22;
+// How far past the white key a black-key note pushes the hand, in slots. A black
+// key sits between two whites, so half a slot lands the finger on it.
+const SONG_BLACK_KEY_BIAS = 0.5;
 // How far the hand may travel from its rest pose while playing, in px. Sized to
 // keep the whole hand in shot at the login splash's framing.
 // Travel bounds, and they are deliberately lopsided. Measured at this framing,
@@ -918,9 +921,20 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
           // a hand still gliding into place does not light the wrong key — the
           // worst case is the hand arriving a little after its own note, which
           // is what a real hand does anyway.
+          // A BLACK key is identified by the white key it sits after, so the
+          // loop above parks the finger on that WHITE key — in front of the
+          // black one, never on it. Für Elise's G#3 is the case that matters.
+          // Offset the drawn hand half a slot further along the key axis, which
+          // is where the black key physically sits. Applied to the RENDER only:
+          // the loop keeps converging on the integer white slot, so the two
+          // never fight, and the lit key is note-driven regardless.
+          const st = kbGeom.slotStep(want);
+          const bias = songAim.aimKey.black ? SONG_BLACK_KEY_BIAS : 0;
+          const goalX = aimTargetX + st[0] * bias;
+          const goalY = aimTargetY + st[1] * bias;
           const w = 2 / SONG_AIM_SETTLE; // natural frequency for critical damping
-          aimVelX += (w * w * (aimTargetX - pianoX) - 2 * w * aimVelX) * frameDt;
-          aimVelY += (w * w * (aimTargetY - pianoY) - 2 * w * aimVelY) * frameDt;
+          aimVelX += (w * w * (goalX - pianoX) - 2 * w * aimVelX) * frameDt;
+          aimVelY += (w * w * (goalY - pianoY) - 2 * w * aimVelY) * frameDt;
           const sp = Math.hypot(aimVelX, aimVelY);
           const maxSpeed = SONG_AIM_MAX_SPEED * unit;
           if (sp > maxSpeed) {
@@ -929,14 +943,13 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
           }
           pianoX += aimVelX * frameDt;
           pianoY += aimVelY * frameDt;
-          // Bound the travel. The loop above only knows about slots, not about
-          // staying in shot, and because the fingers are spread ACROSS the keys
-          // while the keys stack ALONG the view, the hand position needed to put
-          // a given finger on a given slot varies wildly between fingers — left
-          // unbounded the hand wanders out of frame over a few bars. Inside the
-          // box it tracks exactly; at the edge it stops rather than leaving.
-          pianoX = clamp(pianoX, -SONG_AIM_REACH_X, SONG_AIM_REACH_X);
-          pianoY = clamp(pianoY, -SONG_AIM_REACH_Y, SONG_AIM_REACH_Y);
+          // Backstop the drawn position too. reachX/reachY, NOT the bare
+          // constants — those are fractions of `unit`, so clamping to them
+          // directly pins the hand inside a fifth of a pixel and it cannot move
+          // at all. That is exactly what happened when the constants were made
+          // unit-relative and this second clamp was left behind.
+          pianoX = clamp(pianoX, -reachX, reachX);
+          pianoY = clamp(pianoY, -reachY, reachY);
         } else {
           pianoX += (latTarget * PIANO_SHIFT * pianoGate - pianoX) * 0.07;
           pianoY += (Math.min(strkSum, 1.6) * PIANO_DROP * pianoGate - pianoY) * 0.3;
