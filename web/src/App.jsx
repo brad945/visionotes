@@ -40,7 +40,7 @@ export default function App() {
           background: dark ? "#07090d" : "#f3f6f7", // bg lives here now; the hand floats on top
         }}
       >
-        <HeroField background overlay followCursor scale={0.5} />
+        <HeroField background overlay followCursor scale={0.62} />
         <div style={{ position: "absolute", top: 51, left: 0, right: 0, zIndex: 3, display: "flex", justifyContent: "center", transform: "translateX(605px)" }}>
           <ThemeToggle
             style={

@@ -172,7 +172,9 @@ const SONG_FADE_TAU = 0.2;
 const SONG_AIM_TAU = 0.05;
 // Ceiling on how fast the hand may travel, px/sec. Bounds the lurch when the
 // interval is large or the loop has been starved.
-const SONG_AIM_MAX_SPEED = 1500;
+// Also relative to the hand: a bigger hand has further to travel between the
+// same two notes, so a fixed px/sec ceiling would throttle it.
+const SONG_AIM_MAX_SPEED = 3.33; // × unit, per second
 // Time constant of the velocity filter, in seconds. On the WALL CLOCK, not per
 // frame — a per-frame coefficient smooths far less on a slow loop than a fast
 // one, so the motion would differ between displays and, more insidiously, any
@@ -188,8 +190,12 @@ const SONG_AIM_SETTLE = 0.22;
 // side-on camera. So moving ALONG the keys is very nearly a vertical move, and
 // a wide horizontal allowance just lets the controller swing the hand off frame
 // chasing an axis the keys barely use.
-const SONG_AIM_REACH_X = 70;
-const SONG_AIM_REACH_Y = 250;
+// Expressed as a fraction of `unit`, so they track the hand's size instead of
+// being absolute pixels. As fractions these also hold across viewport sizes;
+// the values are the measured 70px / 250px at the unit of 450 they were tuned
+// at. Left absolute, growing the hand would silently tighten its own reach.
+const SONG_AIM_REACH_X = 0.156; // × unit
+const SONG_AIM_REACH_Y = 0.556; // × unit
 // The song strike envelope (press / hold for the note's length / lift) now lives
 // in ../audio/strike so it can be unit-tested — it was a private const in this
 // 1400-line component, which is why the behaviour it exists to provide had no
@@ -368,6 +374,14 @@ function chordShape(seg, curl, prof) {
 // screen tilt (0.2 − 9°), so 0 leaves that baseline untouched. The panel only
 // renders under import.meta.env.DEV — it never ships; the defaults below are
 // what production shows. Keep tweaking via the panel; tell me to re-bake.
+// The unit the keyboard's px offsets below were dialled in at (scale 0.5 at
+// 1600x900). posX/posY are screen pixels, but everything else about the scene —
+// the hand, the key widths, the pivot — scales with `unit`. Left unscaled, the
+// keyboard slides relative to the hand whenever the hand's size or the viewport
+// changes: growing the hand lifted its fingers off the keys and left them
+// hovering at the top edge. Dividing through by this makes the placement
+// scale-invariant, and is identity at the size it was tuned at.
+const KB_TUNED_UNIT = 450;
 const KB_DEFAULTS = {
   posX: 800, posY: -122,   // screen-px offset of the whole keyboard
   // DO NOT "correct" the scale or yaw to make the keyboard anatomically
@@ -629,12 +643,17 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
       const proj = (X, w) => projUV((X - pivotXk) / Uspan, w);
       const tbL = rotW([FINGERS[0].mcp[0] + FINGER_OFFSET[0], FINGERS[0].mcp[1] + FINGER_OFFSET[1]], -HAND_DROOP);
       const pcx = cx + tbL[0] * unit, pcy = wristY - tbL[1] * unit;
+      // See KB_TUNED_UNIT: the keyboard's px offsets have to scale with the rest
+      // of the scene, or it slides relative to the hand as the hand or viewport
+      // changes size.
+      const posX = k.posX * (unit / KB_TUNED_UNIT);
+      const posY = k.posY * (unit / KB_TUNED_UNIT);
       const kbTilt = 0.2 - 9 * DEG + k.tiltDeg * DEG;
       const kbCos = Math.cos(kbTilt), kbSin = Math.sin(kbTilt);
       const toScreen = (pt) => {
         const sx = (pt[0] - pcx) * k.scale;
         const sy = (pt[1] - pcy) * k.scale;
-        return [k.posX + pcx + sx * kbCos - sy * kbSin, k.posY + pcy + sx * kbSin + sy * kbCos];
+        return [posX + pcx + sx * kbCos - sy * kbSin, posY + pcy + sx * kbSin + sy * kbCos];
       };
       // Where a given key sits on screen, at the near edge where a finger presses.
       // A black key sits between white `slot` and `slot + 1`.
@@ -670,7 +689,7 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
         const b = toScreen(proj(kbLeft + (slot + 1.5) * wKeyW, 0));
         return [b[0] - a[0], b[1] - a[1]];
       };
-      return { k, kbLeft, kbW, nearY, faceH, nWhite, wKeyW, EXT_L, EXT_R, proj, toScreen, keyPoint, slotAt, slotStep, pcx, pcy, kbTilt };
+      return { k, posX, posY, kbLeft, kbW, nearY, faceH, nWhite, wKeyW, EXT_L, EXT_R, proj, toScreen, keyPoint, slotAt, slotStep, pcx, pcy, kbTilt };
     }
 
 
@@ -880,8 +899,10 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
             aimTargetX += err * step[0] * k * pianoGate;
             aimTargetY += err * step[1] * k * pianoGate;
           }
-          aimTargetX = clamp(aimTargetX, -SONG_AIM_REACH_X, SONG_AIM_REACH_X);
-          aimTargetY = clamp(aimTargetY, -SONG_AIM_REACH_Y, SONG_AIM_REACH_Y);
+          const reachX = SONG_AIM_REACH_X * unit;
+          const reachY = SONG_AIM_REACH_Y * unit;
+          aimTargetX = clamp(aimTargetX, -reachX, reachX);
+          aimTargetY = clamp(aimTargetY, -reachY, reachY);
           // Follow the target on the wall clock, with a ceiling on how fast the
           // hand may travel. The ceiling is what stops a large interval — or a
           // frame the loop was starved through — resolving in one step, which
@@ -901,9 +922,10 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
           aimVelX += (w * w * (aimTargetX - pianoX) - 2 * w * aimVelX) * frameDt;
           aimVelY += (w * w * (aimTargetY - pianoY) - 2 * w * aimVelY) * frameDt;
           const sp = Math.hypot(aimVelX, aimVelY);
-          if (sp > SONG_AIM_MAX_SPEED) {
-            aimVelX *= SONG_AIM_MAX_SPEED / sp;
-            aimVelY *= SONG_AIM_MAX_SPEED / sp;
+          const maxSpeed = SONG_AIM_MAX_SPEED * unit;
+          if (sp > maxSpeed) {
+            aimVelX *= maxSpeed / sp;
+            aimVelY *= maxSpeed / sp;
           }
           pianoX += aimVelX * frameDt;
           pianoY += aimVelY * frameDt;
@@ -1236,7 +1258,7 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
         // unaffected by tilt/scale. Tilt + uniform scale share the fixed pivot (pcx,pcy) so they
         // commute and the keyboard never drifts. Yaw is NOT here — it lives inside proj() as the
         // metric ground-plane rotation before the homography.
-        bgCtx.translate(k.posX, k.posY);
+        bgCtx.translate(kbGeom.posX, kbGeom.posY);
         bgCtx.translate(pcx, pcy);
         bgCtx.rotate(kbTilt);
         bgCtx.scale(k.scale, k.scale);
