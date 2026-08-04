@@ -1378,16 +1378,24 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
           // fingertip sits in front of them — so an accidental like Für Elise's G#3
           // sounded with nothing moving. Note-driven press fixes that for free.
           const bPress = songKeyPress(k, true) || 0;
-          const bDy = bPress * 0.04 * unit;
+          // Sink a pressed black key noticeably. The hand is directly over the
+          // key it plays — that is what playing looks like — so the movement at
+          // the key's edges is the only part of the press a viewer can see.
+          const bDy = bPress * 0.075 * unit;
           // near edge set back along the recede (start ~12%), far ~60% — shorter than whites
           const n0 = proj(bx, 0.12), n1 = proj(bx2, 0.12), f0 = proj(bx, 0.6), f1 = proj(bx2, 0.6);
           n0[1] += bDy; n1[1] += bDy; // pressed black key sinks at the front
           const bn0 = [n0[0], n0[1] + BK_DOWN], bn1 = [n1[0], n1[1] + BK_DOWN];
           const bf0 = [f0[0], f0[1] + BK_DOWN], bf1 = [f1[0], f1[1] + BK_DOWN];
           const bDown = bPress > 0.06;
-          bgCtx.fillStyle = bDown ? "rgb(46,72,88)" : "rgb(8,10,14)"; // body, no stroke
+          // A bright, saturated blue, deliberately. The previous rgb(60,92,112)
+          // sat within a few points of the hand's own gradient top (#3a5068), so
+          // a pressed black key was indistinguishable from the hand lying across
+          // it. It also defeated the pixel check used to verify this: the scan
+          // matched the HAND and reported ~93k pixels of "pressed key".
+          bgCtx.fillStyle = bDown ? "rgb(74,142,196)" : "rgb(8,10,14)"; // body, no stroke
           fillHull(convexHull([n0, n1, f1, f0, bn0, bn1, bf1, bf0]));
-          bgCtx.fillStyle = bDown ? "rgb(60,92,112)" : "rgb(16,19,25)"; // top cap
+          bgCtx.fillStyle = bDown ? "rgb(108,186,240)" : "rgb(16,19,25)"; // top cap
           bgCtx.beginPath();
           bgCtx.moveTo(n0[0], n0[1]); bgCtx.lineTo(n1[0], n1[1]); bgCtx.lineTo(f1[0], f1[1]); bgCtx.lineTo(f0[0], f0[1]);
           bgCtx.closePath(); bgCtx.fill(); bgCtx.stroke();
