@@ -182,6 +182,18 @@ const SONG_AIM_MAX_SPEED = 3.33; // × unit, per second
 // Roughly how long the hand takes to settle on a new note, in seconds. Drives a
 // critically damped spring, so this is a settling time, not a time constant.
 const SONG_AIM_SETTLE = 0.22;
+// How far ahead of the music the hand starts moving, in seconds — what a player
+// does anyway, and here the only way a long reach is covered at a calm speed
+// rather than a lurch.
+//
+// MEASURED TRADE-OFF (see fingerOnKey.test.jsx). Für Elise's left hand asks for
+// up to ~660px of travel between notes 165ms apart, because at this near-edge-on
+// yaw a black key's depth maps to a long move right. Nothing covers that in one
+// note without darting. Leading by more than the note gap buys the far keys —
+// A3 reaches 65% of its striking frames and G# 31% at 0.28, against 0% for both
+// at 0.06 — but the aim is then a note ahead of the finger that is striking, so
+// the near keys stop coinciding. This value favours the far keys, G# included.
+const SONG_AIM_LOOKAHEAD = 0.28;
 // How far past the white key a black-key note pushes the hand, in slots. A black
 // key sits between two whites, so half a slot lands the finger on it.
 const SONG_BLACK_KEY_BIAS = 0.5;
@@ -197,7 +209,7 @@ const SONG_BLACK_KEY_BIAS = 0.5;
 // being absolute pixels. As fractions these also hold across viewport sizes;
 // the values are the measured 70px / 250px at the unit of 450 they were tuned
 // at. Left absolute, growing the hand would silently tighten its own reach.
-const SONG_AIM_REACH_X = 0.156; // × unit
+const SONG_AIM_REACH_X = 1.45; // × unit
 const SONG_AIM_REACH_Y = 0.556; // × unit
 // The song strike envelope (press / hold for the note's length / lift) now lives
 // in ../audio/strike so it can be unit-tested — it was a private const in this
@@ -486,7 +498,8 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
     let lungeX = 0, lungeY = 0; // eased translation of the whole model toward the Send button
     let pianoX = 0, pianoY = 0; // eased model offset for the idle piano (lateral run + wrist dip)
     let lastFrameMs = t0; // for frame-rate-independent easing
-    let lastRestTips = null; // previous frame's un-struck fingertips, for aiming
+    let lastRestTips = null; // previous frame's un-struck fingertips
+    let lastPressedTips = null; // ...and where each lands at full press, for aiming
     let aimTargetX = 0, aimTargetY = 0; // exact aim target; the drawn hand springs to it
     let aimVelX = 0, aimVelY = 0; // spring velocity, px/sec
     let songFade = 0; // eased 0→1 as a song starts/stops — cross-fades the keyboard
@@ -846,7 +859,19 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
             else break;
           }
           latTarget = recentEv ? recentEv.lat : 0;
-          songAim = recentEv || null; // the note the hand should be reaching for
+          // AIM AHEAD. A pianist moves toward a note before playing it, and here
+          // that is also the only way the hand can arrive on time: reaching G#
+          // means travelling ~660px, because at this near-edge-on yaw a black
+          // key's depth maps to a long move right — and Für Elise's arpeggio
+          // gives a note every 165ms. Starting on the downbeat, the hand covers
+          // barely a third of that before the next note. Starting early, it
+          // arrives with the sound, without having to dart to do it.
+          let aimEv = recentEv;
+          for (const ev of evs) {
+            if (ev.t <= songT + SONG_AIM_LOOKAHEAD) aimEv = ev;
+            else break;
+          }
+          songAim = aimEv || null; // the note the hand should be reaching for
           for (let si = 0; si < 5; si++) {
             pianoFlexArr[si] = strikeAt(songBus.strikeSpans[si], songT);
             strkSum += pianoFlexArr[si];
@@ -863,7 +888,7 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
             strkSum += pianoFlexArr[si];
           }
         }
-        if (songAim && songAim.aimKey && lastRestTips && lastRestTips[songAim.aimFinger]) {
+        if (songAim && songAim.aimKey && lastPressedTips && lastPressedTips[songAim.aimFinger]) {
           // TRAVEL TO THE NOTE — as a closed loop on the quantity that actually
           // matters: which key slot the striking finger is sitting in.
           //
@@ -878,8 +903,24 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
           // Measuring the error in SLOTS and stepping by the local per-slot
           // vector sidesteps all of that — it converges whatever the finger and
           // wherever it is, and it optimises exactly the property being judged.
-          const want = songAim.aimKey.white - songBus.keyOffset;
-          const tip = lastRestTips[songAim.aimFinger];
+          const slotOfKey = songAim.aimKey.white - songBus.keyOffset;
+          // Which slot to steer the finger into. For a white key that is the key
+          // itself. For a BLACK key it is whichever slot the black key's own
+          // playable point falls in — a black key is centred on the boundary
+          // between two whites AND set back in depth, and at this near-edge-on
+          // yaw "into the keyboard" and "along the keys" are nearly the same
+          // screen direction, so its contact point does not sit in the white slot
+          // that names it. Letting the geometry answer that avoids trying to
+          // correct for it with an offset: offsetting by the full depth vector
+          // overshot three slots, and the part perpendicular to the key axis is
+          // ~zero at this angle, so there is nothing to correct WITH.
+          let want = slotOfKey;
+          if (songAim.aimKey.black) {
+            const bxc = kbGeom.kbLeft + (slotOfKey + 1) * kbGeom.wKeyW;
+            const contact = kbGeom.slotAt(kbGeom.toScreen(kbGeom.proj(bxc, 0.36)));
+            if (contact !== null) want = contact;
+          }
+          const tip = lastPressedTips[songAim.aimFinger];
           // Correctness and smoothness are separated, because tying them
           // together forces a choice between the two: enough filtering to stop
           // the hand lurching also stops it arriving in time for the next note.
@@ -890,17 +931,42 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
           // lagging rendered position would keep reporting an error the target
           // has already corrected, and the target would wind up and overshoot.
           const tipAtTarget = [tip[0] + (aimTargetX - pianoX), tip[1] + (aimTargetY - pianoY)];
-          const at = kbGeom.slotAt(tipAtTarget);
-          if (at !== null) {
-            // Integer slot error, deliberately. A fractional coordinate was
-            // tried and is unsound: a fingertip sits far along a key's LENGTH,
-            // so projecting that offset onto the next-key vector picks up
-            // cross-talk. It took tracking from 6 of 7 aims to 0.
-            const err = want - at;
-            const step = kbGeom.slotStep(at);
+          // Steer onto the key's CENTRE LINE, measured perpendicular.
+          //
+          // A key here is a ~2000px sliver, and a finger may legitimately sit
+          // anywhere along its length — so "distance to the key" only means
+          // anything measured ACROSS it. Aiming at a sampled point on the key
+          // instead has now failed three separate ways (overshoot by 345px, by
+          // three slots, and off the keyboard entirely) for exactly this reason:
+          // that point is a long way down a sliver the finger is already on.
+          //
+          // The centre line runs along the key's depth. Project the miss onto its
+          // normal, and drive that to zero: it converges to "on the key" without
+          // ever caring where along the key the finger sits.
+          const kx = songAim.aimKey.black
+            ? kbGeom.kbLeft + (slotOfKey + 1) * kbGeom.wKeyW   // black: on the boundary
+            : kbGeom.kbLeft + (want + 0.5) * kbGeom.wKeyW;     // white: down the middle
+          const d0 = songAim.aimKey.black ? 0.12 : 0.0;
+          const d1 = songAim.aimKey.black ? 0.6 : 1.0;
+          const A = kbGeom.toScreen(kbGeom.proj(kx, d0));
+          const B = kbGeom.toScreen(kbGeom.proj(kx, d1));
+          const dx = B[0] - A[0], dy = B[1] - A[1];
+          const dlen = Math.hypot(dx, dy) || 1;
+          // Drive to the nearest point on the key's centre SEGMENT. The
+          // perpendicular alone constrains only across the key and leaves the
+          // position along it free — fine for a white key, which spans the full
+          // depth, but a black key runs only 0.12 to 0.6, so a finger can sit on
+          // its centre line and still be in front of or behind the actual key.
+          // Clamping the along-coordinate handles both in one step: alongside the
+          // key it corrects across, past either end it pulls back in.
+          const alongRaw = ((tipAtTarget[0] - A[0]) * dx + (tipAtTarget[1] - A[1]) * dy) / (dlen * dlen);
+          const along = clamp(alongRaw, 0, 1);
+          const closeX = A[0] + dx * along;
+          const closeY = A[1] + dy * along;
+          {
             const k = 1 - Math.exp(-frameDt / SONG_AIM_TAU);
-            aimTargetX += err * step[0] * k * pianoGate;
-            aimTargetY += err * step[1] * k * pianoGate;
+            aimTargetX += (closeX - tipAtTarget[0]) * k * pianoGate;
+            aimTargetY += (closeY - tipAtTarget[1]) * k * pianoGate;
           }
           const reachX = SONG_AIM_REACH_X * unit;
           const reachY = SONG_AIM_REACH_Y * unit;
@@ -928,10 +994,8 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
           // is where the black key physically sits. Applied to the RENDER only:
           // the loop keeps converging on the integer white slot, so the two
           // never fight, and the lit key is note-driven regardless.
-          const st = kbGeom.slotStep(want);
-          const bias = songAim.aimKey.black ? SONG_BLACK_KEY_BIAS : 0;
-          const goalX = aimTargetX + st[0] * bias;
-          const goalY = aimTargetY + st[1] * bias;
+          const goalX = aimTargetX;
+          const goalY = aimTargetY;
           const w = 2 / SONG_AIM_SETTLE; // natural frequency for critical damping
           aimVelX += (w * w * (goalX - pianoX) - 2 * w * aimVelX) * frameDt;
           aimVelY += (w * w * (goalY - pianoY) - 2 * w * aimVelY) * frameDt;
@@ -1161,11 +1225,21 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
         // rest (un-struck) tip: same finger WITHOUT the piano strike / click press, so the
         // keyboard can be sized off a stable anchor instead of the jittering live tip.
         const restJoints = fingerJoints(origin, st.base, st.curl, f.seg, f.prof);
+        // Where this finger's tip lands at FULL press — a fixed pose, not the
+        // live one. The aim converges on THIS rather than the resting tip: a
+        // strike drives the fingertip a long way (measured, 1-2 whole key slots
+        // past the target), so aiming the resting tip puts the pressed finger
+        // that far beyond the key it is playing. Using a fixed pose keeps the
+        // loop from feeding back on the live strike level.
+        const pressedJoints = fingerJoints(
+          origin, st.base - PIANO_REACH[i], st.curl + PIANO_EXTEND[i], f.seg, f.prof,
+        );
         fingerJobs.push({
           poly: contour,
           joints: joints.map(drp),
           tip: drp(joints[joints.length - 1]),
           restTip: drp(restJoints[restJoints.length - 1]),
+          pressedTip: drp(pressedJoints[pressedJoints.length - 1]),
           w: f.w,
           capR: f.w * unit * 2.2, // small zone (≈ knuckle-cap size) around the MCP
         });
@@ -1175,7 +1249,11 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
       // the hand with these: they are the tip positions without the strike curl,
       // so a finger pressing down cannot drag the whole hand after it.
       lastRestTips = [];
-      fingerJobs.forEach((job, idx) => { lastRestTips[order[idx]] = job.restTip; });
+      lastPressedTips = [];
+      fingerJobs.forEach((job, idx) => {
+        lastRestTips[order[idx]] = job.restTip;
+        lastPressedTips[order[idx]] = job.pressedTip;
+      });
 
       // --- Idle piano keyboard: fades in with the idle pose. Drawn HERE so it sits
       // UNDER the hand. The keyboard is fixed (so the lateral run reads as the hand
@@ -1213,6 +1291,37 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
               probe.keys[id] = kbGeom.keyPoint(abs - songBus.keyOffset, black);
             }
           }
+          // Is the LIVE fingertip inside the quad of the key it is playing?
+          // The only honest test of the aim: a key is a ~2000px sliver at this
+          // camera angle, so distance to any sampled point on it is meaningless
+          // — a finger correctly on a key can sit 2000px from that point.
+          if (songAim && songAim.aimKey && fingerJobs[order.indexOf(songAim.aimFinger)]) {
+            const G = kbGeom;
+            const job = fingerJobs[order.indexOf(songAim.aimFinger)];
+            const slot = songAim.aimKey.white - songBus.keyOffset;
+            let quad;
+            if (songAim.aimKey.black) {
+              const bw = G.wKeyW * 0.56;
+              const bx = G.kbLeft + (slot + 1) * G.wKeyW - bw / 2;
+              quad = [G.toScreen(G.proj(bx, 0.12)), G.toScreen(G.proj(bx + bw, 0.12)),
+                      G.toScreen(G.proj(bx + bw, 0.6)), G.toScreen(G.proj(bx, 0.6))];
+            } else {
+              const x0 = G.kbLeft + slot * G.wKeyW;
+              quad = [G.toScreen(G.proj(x0, 0)), G.toScreen(G.proj(x0 + G.wKeyW, 0)),
+                      G.toScreen(G.proj(x0 + G.wKeyW, 1)), G.toScreen(G.proj(x0, 1))];
+            }
+            probe.tipOnAimedKey = pointInPoly(job.tip[0], job.tip[1], quad);
+            probe.aimStrike = pianoFlexArr[songAim.aimFinger] * pianoGate;
+            probe.aimQuad = quad;
+            probe.aimTipXY = [job.tip[0], job.tip[1]];
+            probe.aimClamped = {
+              x: Math.abs(Math.abs(aimTargetX) - SONG_AIM_REACH_X * unit) < 0.5,
+              y: Math.abs(Math.abs(aimTargetY) - SONG_AIM_REACH_Y * unit) < 0.5,
+            };
+            probe.wantSlot = slot;
+            probe.liveTipSlot = G.slotAt(job.tip);
+            probe.restTipSlot = G.slotAt(job.restTip);
+          }
           if (songAim && songAim.aimKey) {
             probe.aim = {
               finger: songAim.aimFinger,
@@ -1237,6 +1346,8 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
               if (pointInPoly(tp[0], tp[1], quad)) { probe.fingerSlot[fi] = kk; break; }
             }
           }
+          probe.whitePressed = {};
+          probe.blackPressed = {};
           window.__vnProbe = probe;
         }
         // Song-driven key press. Returns null when no song is playing, so the
@@ -1334,6 +1445,9 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
           // its tip across two key slots during a single press, which made one
           // note flash three different keys.
           let press = songKeyPress(k, false);
+          if (import.meta.env.DEV && window.__vnProbe && press > 0.01) {
+            window.__vnProbe.whitePressed[k] = +press.toFixed(2);
+          }
           if (press === null) {
             press = 0;
             const cap = [toScreen(nl), toScreen(nr), toScreen(fr), toScreen(fl)];
@@ -1378,6 +1492,9 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
           // fingertip sits in front of them — so an accidental like Für Elise's G#3
           // sounded with nothing moving. Note-driven press fixes that for free.
           const bPress = songKeyPress(k, true) || 0;
+          if (import.meta.env.DEV && window.__vnProbe && bPress > 0.01) {
+            window.__vnProbe.blackPressed[k] = +bPress.toFixed(2);
+          }
           // Sink a pressed black key noticeably. The hand is directly over the
           // key it plays — that is what playing looks like — so the movement at
           // the key's edges is the only part of the press a viewer can see.
