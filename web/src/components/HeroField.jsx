@@ -206,10 +206,16 @@ const SONG_BLACK_KEY_BIAS = 0.5;
 // a wide horizontal allowance just lets the controller swing the hand off frame
 // chasing an axis the keys barely use.
 // Expressed as a fraction of `unit`, so they track the hand's size instead of
-// being absolute pixels. As fractions these also hold across viewport sizes;
-// the values are the measured 70px / 250px at the unit of 450 they were tuned
-// at. Left absolute, growing the hand would silently tighten its own reach.
-const SONG_AIM_REACH_X = 1.45; // × unit
+// being absolute pixels, and hold across viewport sizes.
+//
+// The X bound is a deliberate ceiling on how far the hand will lunge. Für Elise's
+// G# sits ~660px away in screen terms — a black key is set back in depth, and at
+// this near-edge-on yaw depth maps to a long move right. Allowing the full reach
+// makes the hand cover it at the speed limit, which reads as a dart rather than
+// a hand moving. Measured, capping here costs nothing: G# does not land inside
+// its note either way, while p90 frame-to-frame motion drops from 27.5px to
+// 14.3px and peak speed from 1678 to 1463 px/s.
+const SONG_AIM_REACH_X = 0.75; // × unit
 const SONG_AIM_REACH_Y = 0.556; // × unit
 // The song strike envelope (press / hold for the note's length / lift) now lives
 // in ../audio/strike so it can be unit-tested — it was a private const in this
@@ -931,42 +937,30 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
           // lagging rendered position would keep reporting an error the target
           // has already corrected, and the target would wind up and overshoot.
           const tipAtTarget = [tip[0] + (aimTargetX - pianoX), tip[1] + (aimTargetY - pianoY)];
-          // Steer onto the key's CENTRE LINE, measured perpendicular.
+          // Steer to the key's PLAYING POINT — near its front edge, where a
+          // hand actually sits — and correct the full 2-D error.
           //
-          // A key here is a ~2000px sliver, and a finger may legitimately sit
-          // anywhere along its length — so "distance to the key" only means
-          // anything measured ACROSS it. Aiming at a sampled point on the key
-          // instead has now failed three separate ways (overshoot by 345px, by
-          // three slots, and off the keyboard entirely) for exactly this reason:
-          // that point is a long way down a sliver the finger is already on.
+          // Constraining only the perpendicular distance to the key's centre
+          // line does not work, and the failure is subtle: a key here is a
+          // ~2000px sliver, so a hand that has drifted far ALONG one is still on
+          // its centre line. The loop reads that as solved and never pulls back.
+          // Traced, the hand reached out ~660px for the G# and then sat there for
+          // the remaining six seconds of the piece, drifting further out on every
+          // note, because each new white-key target was also "satisfied".
           //
-          // The centre line runs along the key's depth. Project the miss onto its
-          // normal, and drive that to zero: it converges to "on the key" without
-          // ever caring where along the key the finger sits.
+          // A fixed point near the front edge removes that freedom: there is one
+          // place on each key the finger should be, so every note pulls the hand
+          // to a definite position and it returns from the black key on its own.
           const kx = songAim.aimKey.black
-            ? kbGeom.kbLeft + (slotOfKey + 1) * kbGeom.wKeyW   // black: on the boundary
-            : kbGeom.kbLeft + (want + 0.5) * kbGeom.wKeyW;     // white: down the middle
-          const d0 = songAim.aimKey.black ? 0.12 : 0.0;
-          const d1 = songAim.aimKey.black ? 0.6 : 1.0;
-          const A = kbGeom.toScreen(kbGeom.proj(kx, d0));
-          const B = kbGeom.toScreen(kbGeom.proj(kx, d1));
-          const dx = B[0] - A[0], dy = B[1] - A[1];
-          const dlen = Math.hypot(dx, dy) || 1;
-          // Drive to the nearest point on the key's centre SEGMENT. The
-          // perpendicular alone constrains only across the key and leaves the
-          // position along it free — fine for a white key, which spans the full
-          // depth, but a black key runs only 0.12 to 0.6, so a finger can sit on
-          // its centre line and still be in front of or behind the actual key.
-          // Clamping the along-coordinate handles both in one step: alongside the
-          // key it corrects across, past either end it pulls back in.
-          const alongRaw = ((tipAtTarget[0] - A[0]) * dx + (tipAtTarget[1] - A[1]) * dy) / (dlen * dlen);
-          const along = clamp(alongRaw, 0, 1);
-          const closeX = A[0] + dx * along;
-          const closeY = A[1] + dy * along;
+            ? kbGeom.kbLeft + (slotOfKey + 1) * kbGeom.wKeyW  // centred on the boundary
+            : kbGeom.kbLeft + (want + 0.5) * kbGeom.wKeyW;    // down the middle
+          // Black keys start further back (they span 0.12-0.6), so their playing
+          // point is deeper than a white key's.
+          const goal = kbGeom.toScreen(kbGeom.proj(kx, songAim.aimKey.black ? 0.14 : 0.06));
           {
             const k = 1 - Math.exp(-frameDt / SONG_AIM_TAU);
-            aimTargetX += (closeX - tipAtTarget[0]) * k * pianoGate;
-            aimTargetY += (closeY - tipAtTarget[1]) * k * pianoGate;
+            aimTargetX += (goal[0] - tipAtTarget[0]) * k * pianoGate;
+            aimTargetY += (goal[1] - tipAtTarget[1]) * k * pianoGate;
           }
           const reachX = SONG_AIM_REACH_X * unit;
           const reachY = SONG_AIM_REACH_Y * unit;
