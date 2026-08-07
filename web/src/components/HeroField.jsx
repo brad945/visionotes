@@ -404,7 +404,7 @@ function chordShape(seg, curl, prof) {
 // scale-invariant, and is identity at the size it was tuned at.
 const KB_TUNED_UNIT = 450;
 const KB_DEFAULTS = {
-  posX: 460, posY: -122,   // screen-px offset of the whole keyboard
+  posX: 720, posY: -122,   // screen-px offset of the whole keyboard
   // DO NOT open the YAW up to make the keyboard anatomically proportional to
   // the hand. The hand is a flat 2D SIDE PROFILE, not a 3D model, and this
   // framing exists to accommodate it: a steep side-on keyboard reads correctly
@@ -413,27 +413,14 @@ const KB_DEFAULTS = {
   // hand is 3D as well. Whatever the finger-to-key mapping needs, it
   // accommodates THIS framing; do not move the yaw to suit the mapping.
   //
-  // scale/posX are a different matter: they are pure framing, and the owner sets
-  // them by eye. Walked 3 -> 2.7 -> 2.45 -> 1.6 and 800 -> 720 -> 650 -> 460 on
-  // request. They also decide whether the hand can reach the accidental, so they
-  // are not free — a grid over the space measured this (Fur Elise, 60fps):
-  //
-  //   scale/posX   far white key   G# (black)   p90 motion
-  //   3.0  / 800       55%             0%        15.2px/f
-  //   2.7  / 720       84%             0%        15.9px/f
-  //   2.45 / 650       82%             0%        17.0px/f
-  //   1.6  / 460       75%            35%        18.9px/f   <- here
-  //
-  // NEITHER KNOB DOES IT ALONE. Holding posX at 650 and shrinking 2.45 -> 1.6
-  // leaves the G# at 0% throughout, because the key and the gap to it shrink
-  // together. Holding scale at 2.45 and walking posX left to 400 reaches 4% and
-  // sends p90 motion to 26.5px/f. posX 460 is the threshold at every scale, and
-  // scale <= 1.6 is what keeps the motion under control once you are there.
-  //
-  // The G# plateaus at 35% — the hand arrives partway through, so it lands for
-  // the back of the strike. Nothing in the grid beat that. Re-measure rather than
-  // reason if these move: the interaction is not monotonic in either knob.
-  scale: 1.6,          // size multiplier about the (fixed) pivot
+  // scale/posX are a different matter: they are pure framing, and the owner
+  // sets them by eye. Nudged 3 -> 2.7 and 800 -> 720 on request. Both shorten
+  // the hand's reach as a side effect — the scale is about a pivot at the thumb
+  // base, so shrinking pulls the keys toward the hand, and the keys sit to the
+  // RIGHT of the thumb, so moving left closes the gap too. Measured: the far
+  // white key's strike coverage went 55% -> 84% and the G# closest approach
+  // 119px -> 60px. Re-measure both if these move again.
+  scale: 2.7,          // size multiplier about the (fixed) pivot
   tiltDeg: -1,         // 2D screen tilt, DELTA from the baseline (0.2 − 9°)
   yawDeg: -51,        // top-down 3D yaw about the left edge (− = clockwise)
   depth: 0.65,        // yaw depth/sensitivity (larger = gentler swing)
