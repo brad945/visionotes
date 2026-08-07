@@ -104,24 +104,31 @@ describe("hand movement during playback", () => {
   });
 
   it("holds the far white key for most of its strike", () => {
+    // Measures 88%, identically at 1280x800, 1366x768, 1440x900, 1600x900 and
+    // 1920x1080 — up from 55% before the travel bounds were raised, which is the
+    // real payoff of that change. The floor sits below 88% because the aim is a
+    // spring and the opening frames of a strike are still travelling.
     hero = mountHero();
     const frames = play(hero, song()).filter((f) => f.aim === "w33" && f.strike > 0.5);
     const on = frames.filter((f) => f.on).length;
     expect(frames.length).toBeGreaterThan(0);
-    expect(on / frames.length).toBeGreaterThan(0.4);
+    expect(on / frames.length).toBeGreaterThan(0.8);
   });
 
   it("documents that G# is approached but not landed inside its note", () => {
-    // Honest record of a measured limit, not an aspiration. The G# is ~660px away
-    // because a black key's depth maps to a long move right at this yaw, and the
-    // arpeggio gives 165ms per note. Covering it in time means moving at the
-    // speed cap, which reads as a dart; the travel bound deliberately prefers the
-    // calmer motion. If this ever starts passing, the geometry changed — check
-    // whether the reach bound or the camera yaw moved before "fixing" the test.
+    // Honest record of a measured limit, not an aspiration — and NOT one the
+    // travel bounds can lift. Sweeping SONG_AIM_REACH_X from 0.75 to 1.45 leaves
+    // this at 0% the whole way, while the X clamp fires on 26 of 26 struck frames
+    // at every single value. The hand is always against the wall, so the aim
+    // target for a black key must be running away rightward without limit: a
+    // defect in the black-key goal, not a lack of reach.
+    //
+    // So if this starts passing, do NOT assume the bounds fixed it. Check the
+    // black-key goal in the songAim block, and check the camera yaw.
     hero = mountHero();
     const frames = play(hero, song()).filter((f) => f.aim === "b32" && f.strike > 0.5);
     expect(frames.length).toBeGreaterThan(0); // it IS aimed at while striking
     const on = frames.filter((f) => f.on).length;
-    expect(on / frames.length).toBeLessThan(0.2); // and does not arrive in time
+    expect(on / frames.length).toBeLessThan(0.2); // and does not arrive
   });
 });

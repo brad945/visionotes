@@ -208,15 +208,32 @@ const SONG_BLACK_KEY_BIAS = 0.5;
 // Expressed as a fraction of `unit`, so they track the hand's size instead of
 // being absolute pixels, and hold across viewport sizes.
 //
-// The X bound is a deliberate ceiling on how far the hand will lunge. Für Elise's
-// G# sits ~660px away in screen terms — a black key is set back in depth, and at
-// this near-edge-on yaw depth maps to a long move right. Allowing the full reach
-// makes the hand cover it at the speed limit, which reads as a dart rather than
-// a hand moving. Measured, capping here costs nothing: G# does not land inside
-// its note either way, while p90 frame-to-frame motion drops from 27.5px to
-// 14.3px and peak speed from 1678 to 1463 px/s.
-const SONG_AIM_REACH_X = 0.75; // × unit
-const SONG_AIM_REACH_Y = 0.556; // × unit
+// These are a ceiling on how far the hand will lunge, and they are the ONLY
+// lever for "the hand should move further" — the keyboard is not to be moved to
+// suit the hand. Raised 0.75 -> 1.00 and 0.556 -> 0.65 on request; the hand now
+// travels 490px right (was 368) and 319px down (was 280) at its furthest.
+//
+// Swept at the production keyboard (Für Elise, 60fps, 1600x900):
+//
+//   reach x/y      far white key   G# (black)   p90 motion
+//   0.75 / 0.556       55%             0%        15.2px/f
+//   0.90 / 0.65        88%             0%        17.5px/f
+//   1.00 / 0.65        88%             0%        18.9px/f   <- here
+//   1.05 / 0.65        88%             0%        20.3px/f
+//   1.45 / 1.00        88%             0%        28.0px/f
+//
+// Two things that sweep settles, both worth knowing before touching these:
+//  - Y IS NOT BINDING past 0.65. Downward travel stops at 319px whether the
+//    bound is 0.65 or 1.00, and the clamp never fires during the G#. Raising it
+//    further is a no-op; 0.65 is exactly where it stops mattering.
+//  - X IS PINNED AT THE BOUND for 26 of 26 G# frames at EVERY value tried, up to
+//    1.45. The aim target for a black key runs away rightward without limit, so
+//    the hand is always against the wall and the G# never lands however much
+//    room it is given. That is a defect in the black-key goal, not a reach
+//    problem, and no value of these constants will fix it. 1.00 is simply the
+//    most travel that stays under the 20px/frame smoothness guard.
+const SONG_AIM_REACH_X = 1.00; // × unit
+const SONG_AIM_REACH_Y = 0.65; // × unit
 // The song strike envelope (press / hold for the note's length / lift) now lives
 // in ../audio/strike so it can be unit-tested — it was a private const in this
 // 1400-line component, which is why the behaviour it exists to provide had no
