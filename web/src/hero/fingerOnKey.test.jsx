@@ -104,24 +104,39 @@ describe("hand movement during playback", () => {
   });
 
   it("holds the far white key for most of its strike", () => {
+    // Measures 84%, identically at 1280x800, 1440x900, 1600x900 and 1920x1080 —
+    // so the floor is a real regression guard, not a fit to one viewport. It sits
+    // below 84% because the aim is a spring and the opening frames of a strike
+    // are still travelling.
     hero = mountHero();
     const frames = play(hero, song()).filter((f) => f.aim === "w33" && f.strike > 0.5);
     const on = frames.filter((f) => f.on).length;
     expect(frames.length).toBeGreaterThan(0);
-    expect(on / frames.length).toBeGreaterThan(0.4);
+    expect(on / frames.length).toBeGreaterThan(0.7);
   });
 
-  it("documents that G# is approached but not landed inside its note", () => {
-    // Honest record of a measured limit, not an aspiration. The G# is ~660px away
-    // because a black key's depth maps to a long move right at this yaw, and the
-    // arpeggio gives 165ms per note. Covering it in time means moving at the
-    // speed cap, which reads as a dart; the travel bound deliberately prefers the
-    // calmer motion. If this ever starts passing, the geometry changed — check
-    // whether the reach bound or the camera yaw moved before "fixing" the test.
+  it("gets the finger close to the G#, on time, without landing on it", () => {
+    // Honest record of a measured limit, not an aspiration.
+    //
+    // The hand is aimed at the G# for ~650ms and its closest approach lands at
+    // t=2.80s, inside the 2.67-2.87s strike — so this is NOT the timing problem
+    // it was once assumed to be. It arrives on time, ~60px short.
+    //
+    // The travel bound pins the last ~26px of it, but is not the whole story:
+    // sweeping SONG_AIM_REACH_X from 0.75 to 1.00 walks the closest approach
+    // 60px -> 34px and then stops, while p90 per-frame motion climbs 15.9 ->
+    // 20.6px. Coverage stays 0% at every bound, so raising it buys motion and
+    // not contact — which is why it stays at 0.75.
+    //
+    // What holds the last ~34px is NOT established. Two candidates worth ruling
+    // out before touching the bound again: the aim steers to depth 0.14 while
+    // keyPoint() reports 0.10, and depth maps to a long sideways move at this
+    // yaw; and a black key is only 0.56 key-widths wide, so a small offset along
+    // the slot axis is enough to sit beside it. Measure before believing either.
     hero = mountHero();
     const frames = play(hero, song()).filter((f) => f.aim === "b32" && f.strike > 0.5);
     expect(frames.length).toBeGreaterThan(0); // it IS aimed at while striking
     const on = frames.filter((f) => f.on).length;
-    expect(on / frames.length).toBeLessThan(0.2); // and does not arrive in time
+    expect(on / frames.length).toBeLessThan(0.2);
   });
 });
