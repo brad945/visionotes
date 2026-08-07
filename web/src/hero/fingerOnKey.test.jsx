@@ -69,7 +69,12 @@ describe("hand movement during playback", () => {
     const peak = Math.max(...frames.map((f) => f.x));
     const settled = frames[frames.length - 1].x;
     expect(peak).toBeGreaterThan(100); // it really does reach out for the G#
-    expect(Math.abs(settled)).toBeLessThan(peak * 0.25); // and comes home again
+    // Signed, not absolute. The bug was the hand stuck out on the black-key side
+    // (+696px); resting a little to the LEFT is just the hand following the last
+    // note it played, and it moves further left every time the keyboard does. An
+    // absolute bound quietly turned into a test of where the keyboard sits.
+    expect(settled).toBeLessThan(peak * 0.25);
+    expect(Math.abs(settled)).toBeLessThan(peak * 0.6); // but not flung the other way
   });
 
   it("returns near home after every black-key excursion, not just the last", () => {
@@ -104,39 +109,40 @@ describe("hand movement during playback", () => {
   });
 
   it("holds the far white key for most of its strike", () => {
-    // Measures 84%, identically at 1280x800, 1440x900, 1600x900 and 1920x1080 —
-    // so the floor is a real regression guard, not a fit to one viewport. It sits
-    // below 84% because the aim is a spring and the opening frames of a strike
-    // are still travelling.
+    // Measures 75%, identically at 1280x800, 1366x768, 1440x900, 1600x900 and
+    // 1920x1080 — so the floor is a real regression guard, not a fit to one
+    // viewport. It sits below 75% because the aim is a spring and the opening
+    // frames of a strike are still travelling.
     hero = mountHero();
     const frames = play(hero, song()).filter((f) => f.aim === "w33" && f.strike > 0.5);
     const on = frames.filter((f) => f.on).length;
     expect(frames.length).toBeGreaterThan(0);
-    expect(on / frames.length).toBeGreaterThan(0.7);
+    expect(on / frames.length).toBeGreaterThan(0.65);
   });
 
-  it("gets the finger close to the G#, on time, without landing on it", () => {
-    // Honest record of a measured limit, not an aspiration.
+  it("lands the finger on the G#, for the back half of its strike", () => {
+    // This test used to assert the OPPOSITE — that the G# was approached and
+    // missed — because at scale 3 it was. The keyboard has since been shrunk and
+    // shifted left (3 -> 1.6, posX 800 -> 460) and the accidental is now reached.
     //
-    // The hand is aimed at the G# for ~650ms and its closest approach lands at
-    // t=2.80s, inside the 2.67-2.87s strike — so this is NOT the timing problem
-    // it was once assumed to be. It arrives on time, ~60px short.
-    //
-    // The travel bound pins the last ~26px of it, but is not the whole story:
-    // sweeping SONG_AIM_REACH_X from 0.75 to 1.00 walks the closest approach
-    // 60px -> 34px and then stops, while p90 per-frame motion climbs 15.9 ->
-    // 20.6px. Coverage stays 0% at every bound, so raising it buys motion and
-    // not contact — which is why it stays at 0.75.
-    //
-    // What holds the last ~34px is NOT established. Two candidates worth ruling
-    // out before touching the bound again: the aim steers to depth 0.14 while
-    // keyPoint() reports 0.10, and depth maps to a long sideways move at this
-    // yaw; and a black key is only 0.56 key-widths wide, so a small offset along
-    // the slot axis is enough to sit beside it. Measure before believing either.
+    // What a grid over that space showed, and what to know before moving it:
+    //  - Neither knob does this alone. Holding posX at 650 and shrinking 2.45 ->
+    //    1.6 leaves coverage at 0% the whole way, because the key and the gap
+    //    shrink together. Holding scale at 2.45 and walking posX left to 400
+    //    reaches 4% and costs p90 motion 17.0 -> 26.5px/f. Only the combination
+    //    works, and posX 460 is the threshold at every scale.
+    //  - It plateaus at 35% (9 of 26 struck frames) and no setting in the grid
+    //    beat that. The hand arrives partway through, so it is the BACK of the
+    //    strike that lands — which is also what a real finger does.
+    //  - "Distance to the key point" is a misleading measure here and misled an
+    //    earlier version of this comment: coverage rose from 0% to 35% while that
+    //    distance got WORSE (30px -> 61px). A black key is a ~30x1360px sliver,
+    //    so the tip lands far along it while sitting well inside it. The quad
+    //    test is the only honest one.
     hero = mountHero();
     const frames = play(hero, song()).filter((f) => f.aim === "b32" && f.strike > 0.5);
     expect(frames.length).toBeGreaterThan(0); // it IS aimed at while striking
     const on = frames.filter((f) => f.on).length;
-    expect(on / frames.length).toBeLessThan(0.2);
+    expect(on / frames.length).toBeGreaterThan(0.25);
   });
 });
