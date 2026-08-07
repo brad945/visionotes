@@ -404,23 +404,15 @@ function chordShape(seg, curl, prof) {
 // scale-invariant, and is identity at the size it was tuned at.
 const KB_TUNED_UNIT = 450;
 const KB_DEFAULTS = {
-  posX: 720, posY: -122,   // screen-px offset of the whole keyboard
-  // DO NOT open the YAW up to make the keyboard anatomically proportional to
-  // the hand. The hand is a flat 2D SIDE PROFILE, not a 3D model, and this
-  // framing exists to accommodate it: a steep side-on keyboard reads correctly
-  // behind a side-on hand. Yaw -30 with scale 1.15 was tried and rejected — it
-  // turns the piano into a three-quarter front view, which only works if the
-  // hand is 3D as well. Whatever the finger-to-key mapping needs, it
-  // accommodates THIS framing; do not move the yaw to suit the mapping.
-  //
-  // scale/posX are a different matter: they are pure framing, and the owner
-  // sets them by eye. Nudged 3 -> 2.7 and 800 -> 720 on request. Both shorten
-  // the hand's reach as a side effect — the scale is about a pivot at the thumb
-  // base, so shrinking pulls the keys toward the hand, and the keys sit to the
-  // RIGHT of the thumb, so moving left closes the gap too. Measured: the far
-  // white key's strike coverage went 55% -> 84% and the G# closest approach
-  // 119px -> 60px. Re-measure both if these move again.
-  scale: 2.7,          // size multiplier about the (fixed) pivot
+  posX: 800, posY: -122,   // screen-px offset of the whole keyboard
+  // DO NOT "correct" the scale or yaw to make the keyboard anatomically
+  // proportional to the hand. The hand is a flat 2D SIDE PROFILE, not a 3D
+  // model, and this framing exists to accommodate it: a steep side-on keyboard
+  // reads correctly behind a side-on hand. Opening the yaw up (tried at -30,
+  // scale 1.15) turns the piano into a three-quarter front view, which only
+  // works if the hand is 3D as well — it isn't, and the result looks wrong.
+  // Whatever the finger-to-key mapping needs, it accommodates THIS framing.
+  scale: 3,           // size multiplier about the (fixed) pivot
   tiltDeg: -1,         // 2D screen tilt, DELTA from the baseline (0.2 − 9°)
   yawDeg: -51,        // top-down 3D yaw about the left edge (− = clockwise)
   depth: 0.65,        // yaw depth/sensitivity (larger = gentler swing)
@@ -1350,16 +1342,6 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
           }
           probe.whitePressed = {};
           probe.blackPressed = {};
-          // Outer corners of the drawn key bed, so a framing change can be
-          // checked against the viewport: the design intent is that the front
-          // and side edges BLEED off-screen rather than ending mid-canvas.
-          probe.kbCorners = {
-            nearL: G.toScreen(G.proj(G.kbLeft - G.EXT_L * G.wKeyW, 0)),
-            nearR: G.toScreen(G.proj(G.kbLeft + (G.nWhite + G.EXT_R) * G.wKeyW, 0)),
-            farR: G.toScreen(G.proj(G.kbLeft + (G.nWhite + G.EXT_R) * G.wKeyW, 1)),
-            farL: G.toScreen(G.proj(G.kbLeft - G.EXT_L * G.wKeyW, 1)),
-            viewport: [W, H],
-          };
           window.__vnProbe = probe;
         }
         // Song-driven key press. Returns null when no song is playing, so the
