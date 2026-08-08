@@ -117,6 +117,7 @@ describe("hand movement during playback", () => {
   it("returns near home after every black-key excursion, not just the last", () => {
     hero = mountHero();
     const c = song();
+    const u = hero.unit; // unit-relative, so resizing the hand cannot false-fail this
     const frames = play(hero, c);
     // after each G# passage, the hand should be back near home within a second
     const gsharps = c.notes.filter((n) => n.hand === "L" && n.midi === 56);
@@ -125,7 +126,7 @@ describe("hand movement during playback", () => {
       const after = frames.filter((f) => f.t > g.t + 0.8 && f.t < g.t + 1.6);
       if (!after.length) continue;
       const closest = Math.min(...after.map((f) => Math.abs(f.x)));
-      if (closest > 200) stranded.push(`after G# @${g.t.toFixed(2)}: nearest home was ${Math.round(closest)}px`);
+      if (closest > 0.4 * u) stranded.push(`after G# @${g.t.toFixed(2)}: nearest home was ${Math.round(closest)}px`);
     }
     expect(stranded).toEqual([]);
   });
@@ -133,7 +134,14 @@ describe("hand movement during playback", () => {
   it("moves smoothly rather than darting", () => {
     // "Shakey" in numbers: per-frame travel at 60fps. A lunge shows up here long
     // before it is describable.
+    //
+    // Bounds are fractions of the hand's own unit, NOT pixels. A bigger hand
+    // covers the same ground in more pixels, so a fixed px/s bound is really a
+    // test of the hand's size — it false-failed the moment the scale went
+    // 0.56 -> 0.60 while the motion was identical. The speed bound is just above
+    // SONG_AIM_MAX_SPEED (3.33 unit/s), which is what it is there to police.
     hero = mountHero();
+    const u = hero.unit;
     const frames = play(hero, song());
     const steps = [];
     for (let i = 1; i < frames.length; i++) {
@@ -141,8 +149,8 @@ describe("hand movement during playback", () => {
     }
     const sorted = [...steps].sort((a, b) => a - b);
     const p90 = sorted[Math.floor(sorted.length * 0.9)];
-    expect(p90).toBeLessThan(20); // px per frame
-    expect(Math.max(...steps) * 60).toBeLessThan(1700); // px/sec
+    expect(p90 / u).toBeLessThan(0.040); // per frame; measures 0.036
+    expect((Math.max(...steps) * 60) / u).toBeLessThan(3.4); // per second; measures 3.33
   });
 
   it("holds the far white key for most of its strike", () => {
@@ -212,6 +220,7 @@ describe("hand movement during playback", () => {
     // this, the lean could get arbitrarily jerky and no test would notice.
     // Measured on the thumb, the finger the lean actually moves.
     hero = mountHero();
+    const u = hero.unit;
     const frames = play(hero, song());
     const steps = [];
     for (let i = 1; i < frames.length; i++) {
@@ -221,6 +230,7 @@ describe("hand movement during playback", () => {
       steps.push(Math.hypot(bx - ax, by - ay));
     }
     const sorted = [...steps].sort((a, b) => a - b);
-    expect(sorted[Math.floor(sorted.length * 0.9)]).toBeLessThan(40); // measures 35
+    // unit-relative, same reason as the hand-motion test above
+    expect(sorted[Math.floor(sorted.length * 0.9)] / u).toBeLessThan(0.080); // measures 0.065
   });
 });

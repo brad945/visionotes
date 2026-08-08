@@ -62,7 +62,9 @@ function stubContext() {
  * getBoundingClientRect is stubbed because jsdom reports every element as 0x0,
  * and a 0-wide canvas makes the whole layout degenerate.
  */
-export function mountHero({ width = 1600, height = 900, scale = 0.56, dpr = 2 } = {}) {
+// `scale` defaults to whatever App.jsx passes HeroField in production, so the
+// tests measure the hand that actually ships. Keep the two in step.
+export function mountHero({ width = 1600, height = 900, scale = 0.60, dpr = 2 } = {}) {
   const frames = [];
   const realRAF = globalThis.requestAnimationFrame;
   const realCAF = globalThis.cancelAnimationFrame;
@@ -123,6 +125,15 @@ export function mountHero({ width = 1600, height = 900, scale = 0.56, dpr = 2 } 
     clearSong() { clearSongSource(); },
     get probe() { return globalThis.__vnProbe; },
     get clock() { return clockMs; },
+    /**
+     * The hand's own size unit, exactly as HeroField computes it.
+     *
+     * Motion thresholds have to be expressed against this rather than in raw
+     * pixels. A bigger hand covers the same ground in more pixels, so a fixed
+     * px/s bound turns into a test of the hand's SIZE and false-fails the moment
+     * anyone resizes it — which is what happened at scale 0.56 -> 0.60.
+     */
+    get unit() { return Math.min(width, height) * scale; },
     destroy() {
       act(() => root.unmount());
       host.remove();
