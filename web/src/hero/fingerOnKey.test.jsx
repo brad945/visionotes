@@ -161,8 +161,10 @@ describe("hand movement during playback", () => {
     // THE HONEST NUMBER, and it is not a good one. Measured per key, over each
     // note's own window (see contactByKey):
     //
-    //   w23   0%     w26   5%     w30  12%     w33  75%     b32   0%
-    //   whole piece: 22%
+    //   w23   0%     w26   5%     w30  10%     w33  75%     b32  70%
+    //   whole piece: 29%
+    //
+    // b32 is 70% only because of the hard-coded BLACK_NUDGE lean; it was 0%.
     //
     // Only the far white key tracks. Every other note in the piece is struck
     // with the finger somewhere other than the key that lights up. Every earlier
@@ -183,24 +185,42 @@ describe("hand movement during playback", () => {
     const tally = contactByKey(play(hero, c), c, keyId);
     const all = [...tally.values()].reduce((a, e) => ({ n: a.n + e.n, on: a.on + e.on }), { n: 0, on: 0 });
     expect(tally.size).toBeGreaterThan(3); // measuring every key, not just one
-    expect(all.on / all.n).toBeGreaterThan(0.18);
+    expect(all.on / all.n).toBeGreaterThan(0.25);
     expect((tally.get("w33").on / tally.get("w33").n)).toBeGreaterThan(0.65);
   });
 
-  it("documents that G# is approached but not landed inside its note", () => {
-    // Honest record of a measured limit, not an aspiration — and NOT one the
-    // travel bounds can lift. Sweeping SONG_AIM_REACH_X from 0.75 to 1.45 leaves
-    // this at 0% the whole way, while the X clamp fires on 26 of 26 struck frames
-    // at every single value. The hand is always against the wall, so the aim
-    // target for a black key must be running away rightward without limit: a
-    // defect in the black-key goal, not a lack of reach.
+  it("puts the finger on the G# for most of the note", () => {
+    // 0% before BLACK_NUDGE, 70% after, at every viewport from 1024x768 to
+    // 1920x1080. Note-anchored, so it measures the note's own window rather than
+    // wherever the aim happens to point.
     //
-    // So if this starts passing, do NOT assume the bounds fixed it. Check the
-    // black-key goal in the songAim block, and check the camera yaw.
+    // The floor is well below 70% on purpose: the lean eases in over ~12 frames,
+    // so the opening of the note is still arriving. If this drops to zero rather
+    // than sagging, suspect BLACK_NUDGE_Y first — the key runs slightly UPWARD
+    // across the screen, and any vertical lean walks the tip straight out of it.
     hero = mountHero();
-    const frames = play(hero, song()).filter((f) => f.aim === "b32" && f.strike > 0.5);
-    expect(frames.length).toBeGreaterThan(0); // it IS aimed at while striking
-    const on = frames.filter((f) => f.on).length;
-    expect(on / frames.length).toBeLessThan(0.2); // and does not arrive
+    const c = song();
+    const tally = contactByKey(play(hero, c), c, keyId);
+    const g = tally.get("b32");
+    expect(g).toBeTruthy();
+    expect(g.on / g.n).toBeGreaterThan(0.5);
+  });
+
+  it("keeps the fingertip path smooth, lean included", () => {
+    // The other smoothness test measures pianoX/pianoY, which is the hand offset
+    // ONLY — BLACK_NUDGE is applied in toCanvas and is invisible to it. Without
+    // this, the lean could get arbitrarily jerky and no test would notice.
+    // Measured on the thumb, the finger the lean actually moves.
+    hero = mountHero();
+    const frames = play(hero, song());
+    const steps = [];
+    for (let i = 1; i < frames.length; i++) {
+      const a = frames[i - 1], b = frames[i];
+      const ax = a.tips[0][0] + a.reach[0][0], ay = a.tips[0][1] + a.reach[0][1];
+      const bx = b.tips[0][0] + b.reach[0][0], by = b.tips[0][1] + b.reach[0][1];
+      steps.push(Math.hypot(bx - ax, by - ay));
+    }
+    const sorted = [...steps].sort((a, b) => a - b);
+    expect(sorted[Math.floor(sorted.length * 0.9)]).toBeLessThan(40); // measures 35
   });
 });

@@ -234,6 +234,37 @@ const SONG_BLACK_KEY_BIAS = 0.5;
 //    most travel that stays under the 20px/frame smoothness guard.
 const SONG_AIM_REACH_X = 1.00; // × unit
 const SONG_AIM_REACH_Y = 0.65; // × unit
+// BLACK-KEY LEAN — a hard-coded extra reach applied ONLY while the hand is going
+// for an accidental. Für Elise's G#3 is the case it exists for; it takes that
+// note's finger-on-key contact from 0% to 70%.
+//
+// Deliberately a constant rather than derived. A black key is set back in depth,
+// and at this near-edge-on yaw depth maps to a long move right: the key's near
+// edge sits ~660px right of the white keys the hand rests on. The aim loop
+// cannot cover that inside a 200ms note — its target lands 340px short and the
+// drawn hand is still accelerating when the note ends — and each principled fix
+// was measured and failed. Raising the travel bound saturates (travel stops
+// growing past 684px however high it goes). Aiming shallower is worth ~190px and
+// still misses. More lookahead with a stiffer spring gets there only at 28px per
+// frame, the visible dart that was rejected twice.
+//
+// Three things the sweeps settled, none of them what was expected:
+//
+//  - THE VERTICAL COMPONENT MUST BE ZERO. "Right and down" is the intuition, but
+//    the key runs right and slightly UP (slope -0.064 on screen), so any
+//    downward lean walks the tip out through the bottom edge. y = -0.04 and
+//    y = +0.14 both measure 0%; y = 0 measures 70%.
+//  - X SITS ON A PLATEAU, not a peak: 0.52 -> 35%, 0.56 -> 55%, 0.60 through
+//    0.72 -> 70%. 0.66 is the middle of that, so it is not balanced on an edge.
+//  - IT MUST BE HIDDEN FROM THE AIM LOOP (see the subtraction at the aim block).
+//    Left visible, the loop reads the lean as progress and steers to cancel it —
+//    that version needed twice the lean and cost 1.5px/frame of hand motion.
+//    Hidden, hand motion is completely unchanged.
+//
+// Verified at 1024x768 through 1920x1080: 70% at every one.
+const BLACK_NUDGE_X = 0.66; // × unit, rightward — the plateau centre
+const BLACK_NUDGE_Y = 0; // × unit — NOT downward; see above
+const BLACK_NUDGE_EASE = 0.18; // per-frame approach toward the target lean
 // The song strike envelope (press / hold for the note's length / lift) now lives
 // in ../audio/strike so it can be unit-tested — it was a private const in this
 // 1400-line component, which is why the behaviour it exists to provide had no
@@ -520,6 +551,7 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
     let armLift = 0; // eased: the whole hand pivots up at the elbow to reach high cursors
     let lungeX = 0, lungeY = 0; // eased translation of the whole model toward the Send button
     let pianoX = 0, pianoY = 0; // eased model offset for the idle piano (lateral run + wrist dip)
+    let blackReach = 0; // eased 0..1: extra lean onto an accidental (see BLACK_NUDGE)
     let lastFrameMs = t0; // for frame-rate-independent easing
     let lastRestTips = null; // previous frame's un-struck fingertips
     let lastPressedTips = null; // ...and where each lands at full press, for aiming
@@ -570,9 +602,21 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
       return [ELBOW[0] + vx * c - vy * s, ELBOW[1] + vx * s + vy * c];
     };
     // local (hand-frame) -> canvas px, with the current arm lift applied.
+    //
+    // blackReach is a RENDER-ONLY lean onto an accidental, deliberately outside
+    // the aim loop. The loop cannot deliver this itself: traced frame by frame,
+    // its target for the G# converges 340px short of the key and the drawn hand
+    // is still accelerating when the 200ms note ends, so raising the travel
+    // bound just saturates (see the G# test). Feeding the lean back through
+    // pianoX would also make the loop fight it — the slot error would read as
+    // overshoot and it would steer straight back off the key. Applied here, the
+    // controller never sees it, and it rides the strike envelope so it eases on
+    // and off with the press rather than snapping.
     const toCanvas = (p) => {
       const q = armLift ? liftLocal(p, armLift) : p;
-      return [cx + lungeX + pianoX + q[0] * unit, wristY + lungeY + pianoY - q[1] * unit];
+      const bx = blackReach * BLACK_NUDGE_X * unit;
+      const by = blackReach * BLACK_NUDGE_Y * unit;
+      return [cx + lungeX + pianoX + bx + q[0] * unit, wristY + lungeY + pianoY + by - q[1] * unit];
     };
     // canvas px -> local (un-lifted frame; the cursor lives here)
     const toLocal = (x, y) => [(x - cx - lungeX - pianoX) / unit, (wristY + lungeY + pianoY - y) / unit];
@@ -943,7 +987,16 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
             const contact = kbGeom.slotAt(kbGeom.toScreen(kbGeom.proj(bxc, 0.36)));
             if (contact !== null) want = contact;
           }
-          const tip = lastPressedTips[songAim.aimFinger];
+          // Subtract the black-key lean before reasoning about the tip. The
+          // lean is applied in toCanvas, so lastPressedTips already carries it —
+          // and if the controller sees it, it treats it as progress toward the
+          // key and steers the hand back left to cancel it. The two then fight,
+          // which is why the lean needed to be roughly twice as large as the gap
+          // it was closing. Undoing it here makes the lean genuinely additive.
+          const leanX = blackReach * BLACK_NUDGE_X * unit;
+          const leanY = blackReach * BLACK_NUDGE_Y * unit;
+          const tipRaw = lastPressedTips[songAim.aimFinger];
+          const tip = [tipRaw[0] - leanX, tipRaw[1] - leanY];
           // Correctness and smoothness are separated, because tying them
           // together forces a choice between the two: enough filtering to stop
           // the hand lurching also stops it arriving in time for the next note.
@@ -1029,11 +1082,23 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
           pianoX += (latTarget * PIANO_SHIFT * pianoGate - pianoX) * 0.07;
           pianoY += (Math.min(strkSum, 1.6) * PIANO_DROP * pianoGate - pianoY) * 0.3;
         }
+        // Lean onto the accidental, driven by the AIM rather than by the press.
+        //
+        // Tying it to the striking finger's press level is the obvious choice and
+        // it does not work: the press ramps over the note, so the lean peaked at
+        // 0.79 at t=2.82 for a note ending at 2.87 and the finger only arrived as
+        // it was leaving. Following the aim instead means the lean starts with
+        // the lookahead, ~300ms early, and is fully in place before the note is
+        // struck — which is also what a pianist does. It still eases rather than
+        // steps, so the hand leans over rather than teleporting.
+        const blackTarget = songAim && songAim.aimKey && songAim.aimKey.black ? pianoGate : 0;
+        blackReach += (blackTarget - blackReach) * BLACK_NUDGE_EASE;
         // wrist hinges: a slow undulation + a flex DOWN on each strike (weight).
         hingeTarget = (Math.sin(t * 0.4) * WRIST_SWAY - Math.min(strkSum, 1.5) * WRIST_FLEX) * pianoGate;
       } else if (!handFrozen) {
         pianoX += (0 - pianoX) * 0.07;
         pianoY += (0 - pianoY) * 0.3;
+        blackReach += (0 - blackReach) * BLACK_NUDGE_EASE;
       }
       if (!handFrozen) wristHinge += (hingeTarget - wristHinge) * 0.25; // eased wrist bend
       const handRot = -HAND_DROOP + wristHinge; // hand's rotation about the wrist (dynamic)
@@ -1285,7 +1350,7 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
         // reasoned about from approximations. Costs nothing in production —
         // import.meta.env.DEV is compiled out — and only runs under ?rafshim=1.
         if (import.meta.env.DEV && window.__rafShim) {
-          const probe = { pianoX, pianoY, tips: {}, keys: {} };
+          const probe = { pianoX, pianoY, blackReach, tips: {}, keys: {} };
           fingerJobs.forEach((job, idx) => {
             probe.tips[order[idx]] = job.restTip;
             // live (struck) tip vs rest tip: how far the strike actually reaches
