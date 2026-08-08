@@ -264,7 +264,12 @@ const SONG_AIM_REACH_Y = 0.65; // × unit
 // Verified at 1024x768 through 1920x1080: 70% at every one.
 const BLACK_NUDGE_X = 0.57; // × unit, rightward — the plateau centre
 const BLACK_NUDGE_Y = 0; // × unit — NOT downward; see above
-const BLACK_NUDGE_EASE = 0.18; // per-frame approach toward the target lean
+// Seconds for the lean to travel its full distance, in and out. This is a
+// TIME-based S-curve rather than the usual exponential approach, because an
+// exponential starts at maximum velocity: the lean was released mid-phrase and
+// the first frame moved the fingertip 83px on its own, which reads as a pop.
+// Smoothstep has zero derivative at both ends, so the reach starts from rest.
+const BLACK_NUDGE_RISE = 0.20;
 // How long after the PREVIOUS note's onset the lean may start, in seconds. The
 // lookahead alone had the hand leaving for the accidental before the note in
 // front of it was played (that note was contacted on 10% of its own window).
@@ -556,6 +561,8 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
     let lungeX = 0, lungeY = 0; // eased translation of the whole model toward the Send button
     let pianoX = 0, pianoY = 0; // eased model offset for the idle piano (lateral run + wrist dip)
     let blackReach = 0; // eased 0..1: extra lean onto an accidental (see BLACK_NUDGE)
+    let blackLeanFor = null; // the aim event the lean has been released for (latch)
+    let blackPhase = 0; // 0..1 position along the lean's S-curve
     let lastFrameMs = t0; // for frame-rate-independent easing
     let lastRestTips = null; // previous frame's un-struck fingertips
     let lastPressedTips = null; // ...and where each lands at full press, for aiming
@@ -911,7 +918,7 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
       const phraseT = (t * PIANO_BPS) % PIANO_PHRASE_BEATS;
       const pianoFlexArr = [0, 0, 0, 0, 0];
       let songAim = null;
-      let prevStruck = true; // has the note the hand is currently on been played?
+      let blackGateOK = true; // has the note immediately before the accidental been played?
       let hingeTarget = 0;
       if (pianoGate > 0.01) {
         let strkSum = 0;
@@ -952,13 +959,28 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
             else break;
           }
           songAim = aimEv || null; // the note the hand should be reaching for
-          // Has the note the hand is ON been struck yet? Gates the black-key
-          // lean below. Touching the LOOKAHEAD to achieve the same thing was
-          // tried and is much worse: gating every note drops the far white key
-          // 75% -> 40%, and gating only accidentals inside this loop strands
-          // the search on the blocked event and drops it to 18%. The lookahead
-          // is load-bearing for the whole piece; the lean is not.
-          prevStruck = !recentEv || songT >= recentEv.t + BLACK_NUDGE_HOLD;
+          // Gate for the black-key lean: has the note IMMEDIATELY BEFORE the
+          // accidental been played?
+          //
+          // It must be that note, found in the event list, and not simply the
+          // most recent event. Für Elise's arpeggio runs E2 2.31, E3 2.48, G#
+          // 2.64, and the aim reaches the G# at 2.36 — when the most recent
+          // event is still the E2. Gating on "the current event" therefore let
+          // the lean go at 2.37, 110ms before the E3 it was supposed to wait
+          // for. The E3 measured better anyway, but only as an artifact of the
+          // retraction bug below holding the hand back by accident.
+          //
+          // Touching the LOOKAHEAD instead was tried twice and is much worse:
+          // gating every note drops the far white key 75% -> 40%, and gating
+          // only accidentals inside the search above strands it on the blocked
+          // event and drops that key to 18%. The lookahead is load-bearing for
+          // the whole piece; the lean is not.
+          blackGateOK = true;
+          if (aimEv && aimEv.aimKey && aimEv.aimKey.black) {
+            const ai = evs.indexOf(aimEv);
+            const before = ai > 0 ? evs[ai - 1] : null;
+            blackGateOK = !before || songT >= before.t + BLACK_NUDGE_HOLD;
+          }
           for (let si = 0; si < 5; si++) {
             pianoFlexArr[si] = strikeAt(songBus.strikeSpans[si], songT);
             strkSum += pianoFlexArr[si];
@@ -1111,21 +1133,28 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
         // the lookahead, ~300ms early, and is fully in place before the note is
         // struck — which is also what a pianist does. It still eases rather than
         // steps, so the hand leans over rather than teleporting.
-        // ...and NOT until the note the hand is currently on has actually been
-        // struck. The lean is the big visible excursion, so starting it on the
-        // lookahead alone pulled the hand off the preceding note before that
-        // note was played — it was contacted on 10% of its own window. Waiting
-        // for the press means the reach begins when the previous note sounds.
-        const blackTarget = songAim && songAim.aimKey && songAim.aimKey.black && prevStruck
-          ? pianoGate
-          : 0;
-        blackReach += (blackTarget - blackReach) * BLACK_NUDGE_EASE;
+        // ...and not until the note before the accidental has been played.
+        //
+        // LATCHED PER TARGET, which matters more than the gate itself. Testing
+        // the gate every frame made it RETRACT a lean already under way: each
+        // new event reset it for BLACK_NUDGE_HOLD, so mid-approach the lean fell
+        // 0.75 -> 0.41 and then climbed again, twice per G#, yanking the hand
+        // ~200px backwards and forwards. Ten direction reversals across the
+        // piece — the "glitchy/jumpy" that was reported. Once released for a
+        // given target the lean stays released until the aim leaves it, so the
+        // gate can only ever delay the reach, never reverse it.
+        if (!(songAim && songAim.aimKey && songAim.aimKey.black)) blackLeanFor = null;
+        else if (blackLeanFor !== songAim && blackGateOK) blackLeanFor = songAim;
+        const blackTarget = blackLeanFor && blackLeanFor === songAim ? pianoGate : 0;
+        blackPhase = clamp(blackPhase + (blackTarget > 0.5 ? frameDt : -frameDt) / BLACK_NUDGE_RISE, 0, 1);
+        blackReach = blackPhase * blackPhase * (3 - 2 * blackPhase); // smoothstep
         // wrist hinges: a slow undulation + a flex DOWN on each strike (weight).
         hingeTarget = (Math.sin(t * 0.4) * WRIST_SWAY - Math.min(strkSum, 1.5) * WRIST_FLEX) * pianoGate;
       } else if (!handFrozen) {
         pianoX += (0 - pianoX) * 0.07;
         pianoY += (0 - pianoY) * 0.3;
-        blackReach += (0 - blackReach) * BLACK_NUDGE_EASE;
+        blackPhase = Math.max(0, blackPhase - frameDt / BLACK_NUDGE_RISE);
+        blackReach = blackPhase * blackPhase * (3 - 2 * blackPhase);
       }
       if (!handFrozen) wristHinge += (hingeTarget - wristHinge) * 0.25; // eased wrist bend
       const handRot = -HAND_DROOP + wristHinge; // hand's rotation about the wrist (dynamic)

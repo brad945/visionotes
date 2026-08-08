@@ -33,7 +33,7 @@ function play(hero, c, dtMs = 1000 / 60) {
     hero.step(dtMs);
     const p = hero.probe;
     if (p) frames.push({ t, x: p.pianoX, y: p.pianoY, aim: p.aim?.key, strike: p.aimStrike, on: p.tipOnAimedKey,
-                         tips: p.tips, reach: p.reach, quads: p.keyQuads });
+                         tips: p.tips, reach: p.reach, quads: p.keyQuads, lean: p.blackReach || 0 });
   }
   return frames;
 }
@@ -169,11 +169,11 @@ describe("hand movement during playback", () => {
     // THE HONEST NUMBER, and it is not a good one. Measured per key, over each
     // note's own window (see contactByKey):
     //
-    //   w23   0%     w26   5%     w30  12%     w33  75%     b32   0%
-    //   whole piece: 22%
+    //   w23   0%     w26   5%     w30  12%     w33  75%     b32  60%
+    //   whole piece: 29%
     //
-    // b32 is 0% because BLACK_NUDGE_X is set by eye below the contact cliff —
-    // see "records how far the hand leans for the G#". At 0.66 it reads 30%.
+    // b32 is 60% only because of the hard-coded BLACK_NUDGE lean; it was 0% —
+    // see "lands the G# at the shorter, owner-chosen lean".
     //
     // Only the far white key tracks. Every other note in the piece is struck
     // with the finger somewhere other than the key that lights up. Every earlier
@@ -196,6 +196,50 @@ describe("hand movement during playback", () => {
     expect(tally.size).toBeGreaterThan(3); // measuring every key, not just one
     expect(all.on / all.n).toBeGreaterThan(0.18);
     expect((tally.get("w33").on / tally.get("w33").n)).toBeGreaterThan(0.65);
+  });
+
+  it("never reverses the black-key lean mid-reach", () => {
+    // THE GLITCH, reported as "glitchy/jumpy". The gate was re-evaluated every
+    // frame, so each new event reset it for BLACK_NUDGE_HOLD and RETRACTED a
+    // lean already under way: mid-approach it fell 0.75 -> 0.41, climbed back,
+    // fell 0.85 -> 0.47, climbed back — the hand yanked ~200px backwards and
+    // forwards, twice per G#. Ten direction reversals across the piece.
+    //
+    // Latching the release per target fixed it. Zero reversals now, and this
+    // asserts exactly that: the lean is monotonic in each direction, so the
+    // reach can be delayed but never reversed.
+    hero = mountHero();
+    const frames = play(hero, song());
+    let reversals = 0;
+    for (let i = 2; i < frames.length; i++) {
+      const a = frames[i - 2].lean, b = frames[i - 1].lean, c = frames[i].lean;
+      if ((b - a) * (c - b) < -1e-9) reversals++;
+    }
+    expect(reversals).toBe(0);
+  });
+
+  it("starts the lean from rest rather than popping", () => {
+    // The second half of the glitch. An exponential ease starts at MAXIMUM
+    // velocity, so releasing the lean mid-phrase moved the fingertip 83px in its
+    // first frame. BLACK_NUDGE_RISE drives a smoothstep instead, which has zero
+    // derivative at both ends, and the same frame now moves 34px.
+    //
+    // Measured on the jerk — frame-to-frame CHANGE in step size — because that
+    // is what a pop actually is, and a plain step-size bound cannot see it.
+    hero = mountHero();
+    const frames = play(hero, song());
+    const step = [];
+    for (let i = 1; i < frames.length; i++) {
+      const a = frames[i - 1], b = frames[i];
+      step.push(Math.hypot(
+        (b.tips[0][0] + b.reach[0][0]) - (a.tips[0][0] + a.reach[0][0]),
+        (b.tips[0][1] + b.reach[0][1]) - (a.tips[0][1] + a.reach[0][1]),
+      ));
+    }
+    const jerk = [];
+    for (let i = 1; i < step.length; i++) jerk.push(Math.abs(step[i] - step[i - 1]));
+    const sorted = [...jerk].sort((a, b) => a - b);
+    expect(sorted[Math.floor(sorted.length * 0.99)] / hero.unit).toBeLessThan(0.055); // measures 0.041
   });
 
   it("waits for the note before the G# to be played before reaching for it", () => {
@@ -229,28 +273,25 @@ describe("hand movement during playback", () => {
     expect(pct(before)).toBeGreaterThan(Math.max(...others.map(pct)));
   });
 
-  it("records how far the hand leans for the G#, and what that costs", () => {
-    // BLACK_NUDGE_X is set BY EYE — the owner judged the reach visually too far
-    // right and asked for ~50px less, so it is 0.57 (307px at the shipping hand
-    // size) rather than the 0.66 that maximises contact.
+  it("lands the G# at the shorter, owner-chosen lean", () => {
+    // BLACK_NUDGE_X is set BY EYE: the reach was judged visually too far right
+    // and shortened ~50px, from 0.66 to 0.57 (307px at the shipping hand size).
     //
-    // That is a real trade and this test records it rather than hiding it:
-    // finger-on-key contact for the G# is 0% at 0.57. The cliff is sharp —
-    // 0.57/0.59/0.61/0.63 all measure 0%, 0.66 measures 30%, 0.70 measures 40%.
-    // The fingertip simply stops short of the key's near edge below ~350px.
+    // That trade looked much worse than it was. With the old exponential ease
+    // and the un-latched gate, 0.57 measured 0% contact and the cliff read as
+    // sharp — 0.57/0.59/0.61/0.63 all 0%, 0.66 only 30%. Both of those numbers
+    // were depressed by the retraction bug: the lean was being pulled back
+    // mid-reach and never arrived at full extension. Latched, and driven by a
+    // smoothstep that actually reaches 1.0, the SHORT lean lands 60%.
     //
-    // So this asserts the lean is still APPLIED and still large, which is what a
-    // regression would remove; it deliberately does not assert contact, because
-    // at the owner's chosen value there is none. Raise BLACK_NUDGE_X to 0.66 to
-    // trade the look back for the contact.
+    // So the fix for the glitch also bought back the contact the shortening was
+    // supposed to have cost. 55-60% at 1280x800 through 1920x1080.
     hero = mountHero();
     const c = song();
-    const frames = play(hero, c);
-    const g = c.notes.find((n) => n.hand === "L" && n.midi === 56);
-    const win = frames.filter((f) => f.t >= g.t && f.t < g.t + g.dur);
-    const home = frames[5].tips[0][0];
-    const reached = Math.max(...win.map((f) => f.tips[0][0])) - home;
-    expect(reached / hero.unit).toBeGreaterThan(0.5); // the lean is happening
+    const tally = contactByKey(play(hero, c), c, keyId);
+    const g = tally.get("b32");
+    expect(g).toBeTruthy();
+    expect(g.on / g.n).toBeGreaterThan(0.45);
   });
 
   it("keeps the fingertip path smooth, lean included", () => {
