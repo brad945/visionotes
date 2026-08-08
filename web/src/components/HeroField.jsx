@@ -129,7 +129,25 @@ const PIANO_EXTEND = [0, 3, 2.5, 3, 7].map((d) => d * DEG);    // finger straigh
 const PIANO_HOVER = [4, 4, 4, 4, 4].map((d) => d * DEG);
 // The pinky needs a bigger angle than the thumb for a comparable reach: it rests
 // more curled and its bones are shorter, so the same swing buys less travel.
-const PIANO_SHIFT = 13; // px the hand drifts laterally per finger-step (arm follows the run)
+// How far the hand drifts laterally per finger-step in the IDLE phrase, as a
+// fraction of the hand's own unit — the arm following the run.
+//
+// This was 13 raw pixels and was the only absolute length left in the idle
+// animation; everything else driving it is an angle (PIANO_HOVER, PIANO_REACH,
+// WRIST_SWAY, WRIST_FLEX), and angles already produce proportional travel. So
+// when the hand grew, the drift did not: measured, the full sweep stayed at
+// 31.1px at EVERY hand size and viewport, which is 0.062 unit at the old scale
+// 0.56 but only 0.058 at 0.60, and 0.048 at 1920x1080. The bigger the hand, the
+// less it moved relative to itself.
+//
+// 0.0258 reproduces the tuned 13px at the size it was dialled in at (unit 504)
+// and scales from there.
+const PIANO_SHIFT_U = 0.0258;
+// The keyboard's margin ALSO used the 13px, mixed in with a unit-relative term:
+// `0.22 * unit + 2 * PIANO_SHIFT`. That one stays absolute on purpose — making
+// it scale would change kbLeft/kbW and move the piano, and the piano does not
+// move. Kept as its own constant so the two cannot be conflated again.
+const PIANO_MARGIN_PX = 13;
 const PIANO_DROP = 0; // 0 = the whole hand does NOT translate down on strikes (kept the
 //                       finger-press curl + lateral drift; this dip made the hand sink)
 const WRIST_SWAY = 3 * DEG; // gentle continuous wrist undulation while playing
@@ -718,7 +736,7 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
         nMax = Math.max(nMax, kx);
         sumY += ky;
       }
-      const margin = 0.22 * unit + 2 * PIANO_SHIFT;
+      const margin = 0.22 * unit + 2 * PIANO_MARGIN_PX;
       const kbLeft = nMin - margin;
       const kbW = nMax - nMin + 2 * margin;
       const nearY = sumY / FINGERS.length + 0.02 * unit; // front edge — where fingers press
@@ -1130,7 +1148,7 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
           pianoX = clamp(pianoX, -reachX, reachX);
           pianoY = clamp(pianoY, -reachY, reachY);
         } else {
-          pianoX += (latTarget * PIANO_SHIFT * pianoGate - pianoX) * 0.07;
+          pianoX += (latTarget * PIANO_SHIFT_U * unit * pianoGate - pianoX) * 0.07;
           pianoY += (Math.min(strkSum, 1.6) * PIANO_DROP * pianoGate - pianoY) * 0.3;
         }
         // Lean onto the accidental, driven by the AIM rather than by the press.
