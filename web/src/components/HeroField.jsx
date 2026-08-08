@@ -1,7 +1,7 @@
 import { useRef, useEffect, useState } from "react";
 import { useTheme } from "../theme/ThemeProvider";
 import { songBus } from "../audio/songBus";
-import { strikeAt } from "../audio/strike";
+import { strikeAt, SONG_PRESS } from "../audio/strike";
 import "./HeroField.css";
 
 // Theme-aware particle palettes (rgb triples used in rgba()).
@@ -262,9 +262,13 @@ const SONG_AIM_REACH_Y = 0.65; // × unit
 //    Hidden, hand motion is completely unchanged.
 //
 // Verified at 1024x768 through 1920x1080: 70% at every one.
-const BLACK_NUDGE_X = 0.66; // × unit, rightward — the plateau centre
+const BLACK_NUDGE_X = 0.57; // × unit, rightward — the plateau centre
 const BLACK_NUDGE_Y = 0; // × unit — NOT downward; see above
 const BLACK_NUDGE_EASE = 0.18; // per-frame approach toward the target lean
+// How long after the PREVIOUS note's onset the lean may start, in seconds. The
+// lookahead alone had the hand leaving for the accidental before the note in
+// front of it was played (that note was contacted on 10% of its own window).
+const BLACK_NUDGE_HOLD = 0.05;
 // The song strike envelope (press / hold for the note's length / lift) now lives
 // in ../audio/strike so it can be unit-tested — it was a private const in this
 // 1400-line component, which is why the behaviour it exists to provide had no
@@ -907,6 +911,7 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
       const phraseT = (t * PIANO_BPS) % PIANO_PHRASE_BEATS;
       const pianoFlexArr = [0, 0, 0, 0, 0];
       let songAim = null;
+      let prevStruck = true; // has the note the hand is currently on been played?
       let hingeTarget = 0;
       if (pianoGate > 0.01) {
         let strkSum = 0;
@@ -933,12 +938,27 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
           // gives a note every 165ms. Starting on the downbeat, the hand covers
           // barely a third of that before the next note. Starting early, it
           // arrives with the sound, without having to dart to do it.
+          //
+          // But NOT before the current note has been struck. Applied blindly the
+          // lookahead abandons the note the hand is on: the reach for the G#
+          // began 280ms early, which is before the note preceding it was even
+          // played, so that note was contacted on 10% of its own window while
+          // the hand was already on its way to the accidental. Holding the aim
+          // until the press has landed costs the reach a little of its head
+          // start and buys the previous note actually being hit.
           let aimEv = recentEv;
           for (const ev of evs) {
             if (ev.t <= songT + SONG_AIM_LOOKAHEAD) aimEv = ev;
             else break;
           }
           songAim = aimEv || null; // the note the hand should be reaching for
+          // Has the note the hand is ON been struck yet? Gates the black-key
+          // lean below. Touching the LOOKAHEAD to achieve the same thing was
+          // tried and is much worse: gating every note drops the far white key
+          // 75% -> 40%, and gating only accidentals inside this loop strands
+          // the search on the blocked event and drops it to 18%. The lookahead
+          // is load-bearing for the whole piece; the lean is not.
+          prevStruck = !recentEv || songT >= recentEv.t + BLACK_NUDGE_HOLD;
           for (let si = 0; si < 5; si++) {
             pianoFlexArr[si] = strikeAt(songBus.strikeSpans[si], songT);
             strkSum += pianoFlexArr[si];
@@ -1091,7 +1111,14 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
         // the lookahead, ~300ms early, and is fully in place before the note is
         // struck — which is also what a pianist does. It still eases rather than
         // steps, so the hand leans over rather than teleporting.
-        const blackTarget = songAim && songAim.aimKey && songAim.aimKey.black ? pianoGate : 0;
+        // ...and NOT until the note the hand is currently on has actually been
+        // struck. The lean is the big visible excursion, so starting it on the
+        // lookahead alone pulled the hand off the preceding note before that
+        // note was played — it was contacted on 10% of its own window. Waiting
+        // for the press means the reach begins when the previous note sounds.
+        const blackTarget = songAim && songAim.aimKey && songAim.aimKey.black && prevStruck
+          ? pianoGate
+          : 0;
         blackReach += (blackTarget - blackReach) * BLACK_NUDGE_EASE;
         // wrist hinges: a slow undulation + a flex DOWN on each strike (weight).
         hingeTarget = (Math.sin(t * 0.4) * WRIST_SWAY - Math.min(strkSum, 1.5) * WRIST_FLEX) * pianoGate;

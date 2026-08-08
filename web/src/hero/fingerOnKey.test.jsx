@@ -169,10 +169,11 @@ describe("hand movement during playback", () => {
     // THE HONEST NUMBER, and it is not a good one. Measured per key, over each
     // note's own window (see contactByKey):
     //
-    //   w23   0%     w26   5%     w30  10%     w33  75%     b32  70%
-    //   whole piece: 29%
+    //   w23   0%     w26   5%     w30  12%     w33  75%     b32   0%
+    //   whole piece: 22%
     //
-    // b32 is 70% only because of the hard-coded BLACK_NUDGE lean; it was 0%.
+    // b32 is 0% because BLACK_NUDGE_X is set by eye below the contact cliff —
+    // see "records how far the hand leans for the G#". At 0.66 it reads 30%.
     //
     // Only the far white key tracks. Every other note in the piece is struck
     // with the finger somewhere other than the key that lights up. Every earlier
@@ -193,25 +194,63 @@ describe("hand movement during playback", () => {
     const tally = contactByKey(play(hero, c), c, keyId);
     const all = [...tally.values()].reduce((a, e) => ({ n: a.n + e.n, on: a.on + e.on }), { n: 0, on: 0 });
     expect(tally.size).toBeGreaterThan(3); // measuring every key, not just one
-    expect(all.on / all.n).toBeGreaterThan(0.25);
+    expect(all.on / all.n).toBeGreaterThan(0.18);
     expect((tally.get("w33").on / tally.get("w33").n)).toBeGreaterThan(0.65);
   });
 
-  it("puts the finger on the G# for most of the note", () => {
-    // 0% before BLACK_NUDGE, 70% after, at every viewport from 1024x768 to
-    // 1920x1080. Note-anchored, so it measures the note's own window rather than
-    // wherever the aim happens to point.
+  it("waits for the note before the G# to be played before reaching for it", () => {
+    // The reported problem: the hand left for the accidental on the lookahead,
+    // ~280ms early, which is before the note in front of it had sounded. That
+    // note (E3 at 2.48s) was contacted on 10% of its own window.
     //
-    // The floor is well below 70% on purpose: the lean eases in over ~12 frames,
-    // so the opening of the note is still arriving. If this drops to zero rather
-    // than sagging, suspect BLACK_NUDGE_Y first — the key runs slightly UPWARD
-    // across the screen, and any vertical lean walks the tip straight out of it.
+    // BLACK_NUDGE_HOLD gates the lean on the previous note's press landing, and
+    // takes it to 20%. The comparison that shows the gate is doing it: the SAME
+    // E3 appears three more times in the piece with no accidental after it, and
+    // those still measure 10-11%. The pre-G# one is now the best of the four.
+    //
+    // Gating the LOOKAHEAD instead of the lean was tried and is much worse —
+    // see the comment at the aim block.
     hero = mountHero();
     const c = song();
-    const tally = contactByKey(play(hero, c), c, keyId);
-    const g = tally.get("b32");
-    expect(g).toBeTruthy();
-    expect(g.on / g.n).toBeGreaterThan(0.5);
+    const frames = play(hero, c);
+    const left = c.notes.filter((n) => n.hand === "L").sort((a, b) => a.t - b.t);
+    const gi = left.findIndex((n) => n.midi === 56); // first G#
+    expect(gi).toBeGreaterThan(0);
+    const before = left[gi - 1];
+    const pct = (n) => {
+      const t = contactByKey(frames, { notes: [n] }, keyId);
+      const e = [...t.values()][0];
+      return e ? e.on / e.n : 0;
+    };
+    expect(pct(before)).toBeGreaterThan(0.15);
+    // and it beats the same note where no accidental follows
+    const others = left.filter((n) => n.midi === before.midi && n !== before);
+    expect(others.length).toBeGreaterThan(0);
+    expect(pct(before)).toBeGreaterThan(Math.max(...others.map(pct)));
+  });
+
+  it("records how far the hand leans for the G#, and what that costs", () => {
+    // BLACK_NUDGE_X is set BY EYE — the owner judged the reach visually too far
+    // right and asked for ~50px less, so it is 0.57 (307px at the shipping hand
+    // size) rather than the 0.66 that maximises contact.
+    //
+    // That is a real trade and this test records it rather than hiding it:
+    // finger-on-key contact for the G# is 0% at 0.57. The cliff is sharp —
+    // 0.57/0.59/0.61/0.63 all measure 0%, 0.66 measures 30%, 0.70 measures 40%.
+    // The fingertip simply stops short of the key's near edge below ~350px.
+    //
+    // So this asserts the lean is still APPLIED and still large, which is what a
+    // regression would remove; it deliberately does not assert contact, because
+    // at the owner's chosen value there is none. Raise BLACK_NUDGE_X to 0.66 to
+    // trade the look back for the contact.
+    hero = mountHero();
+    const c = song();
+    const frames = play(hero, c);
+    const g = c.notes.find((n) => n.hand === "L" && n.midi === 56);
+    const win = frames.filter((f) => f.t >= g.t && f.t < g.t + g.dur);
+    const home = frames[5].tips[0][0];
+    const reached = Math.max(...win.map((f) => f.tips[0][0])) - home;
+    expect(reached / hero.unit).toBeGreaterThan(0.5); // the lean is happening
   });
 
   it("keeps the fingertip path smooth, lean included", () => {
