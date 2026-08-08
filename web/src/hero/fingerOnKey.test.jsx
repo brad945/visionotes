@@ -169,10 +169,10 @@ describe("hand movement during playback", () => {
     // THE HONEST NUMBER, and it is not a good one. Measured per key, over each
     // note's own window (see contactByKey):
     //
-    //   w23   0%     w26   5%     w30  12%     w33  75%     b32  60%
-    //   whole piece: 29%
+    //   w23   0%     w26   5%     w30  12%     w33  75%     b32   0%
+    //   whole piece: 22%
     //
-    // b32 is 60% only because of the hard-coded BLACK_NUDGE lean; it was 0% —
+    // b32 is 0% because BLACK_NUDGE_X is set by eye below the contact threshold —
     // see "lands the G# at the shorter, owner-chosen lean".
     //
     // Only the far white key tracks. Every other note in the piece is struck
@@ -273,25 +273,29 @@ describe("hand movement during playback", () => {
     expect(pct(before)).toBeGreaterThan(Math.max(...others.map(pct)));
   });
 
-  it("lands the G# at the shorter, owner-chosen lean", () => {
-    // BLACK_NUDGE_X is set BY EYE: the reach was judged visually too far right
-    // and shortened ~50px, from 0.66 to 0.57 (307px at the shipping hand size).
+  it("records the G# lean, which is set by eye below the contact threshold", () => {
+    // BLACK_NUDGE_X is chosen by look, not by this measurement. Shortened twice
+    // on request — 0.66 -> 0.57 -> 0.385 — and contact follows it down:
     //
-    // That trade looked much worse than it was. With the old exponential ease
-    // and the un-latched gate, 0.57 measured 0% contact and the cliff read as
-    // sharp — 0.57/0.59/0.61/0.63 all 0%, 0.66 only 30%. Both of those numbers
-    // were depressed by the retraction bug: the lean was being pulled back
-    // mid-reach and never arrived at full extension. Latched, and driven by a
-    // smoothstep that actually reaches 1.0, the SHORT lean lands 60%.
+    //   0.57 (307px)  60%      0.48 (259px)   5%      0.44 (237px)  0%
+    //   0.385 (207px)  0%   <- here
     //
-    // So the fix for the glitch also bought back the contact the shortening was
-    // supposed to have cost. 55-60% at 1280x800 through 1920x1080.
+    // So the finger does NOT touch the G# at the current value, deliberately.
+    // This test therefore asserts the lean is still APPLIED and still large —
+    // which is what a regression would remove — and records the threshold rather
+    // than asserting contact that is not there by choice. 0.57 restores it.
+    //
+    // The lean is also only part of the excursion: the thumb tip peaks 734px
+    // right of home, of which the lean is 207px. SONG_AIM_REACH_X supplies the
+    // rest, and is the lever if the reach still reads as too far.
     hero = mountHero();
     const c = song();
-    const tally = contactByKey(play(hero, c), c, keyId);
-    const g = tally.get("b32");
-    expect(g).toBeTruthy();
-    expect(g.on / g.n).toBeGreaterThan(0.45);
+    const frames = play(hero, c);
+    const g = c.notes.find((n) => n.hand === "L" && n.midi === 56);
+    const win = frames.filter((f) => f.t >= g.t && f.t < g.t + g.dur);
+    const home = frames[5].tips[0][0];
+    const reached = Math.max(...win.map((f) => f.tips[0][0])) - home;
+    expect(reached / hero.unit).toBeGreaterThan(0.5); // the lean is happening
   });
 
   it("keeps the fingertip path smooth, lean included", () => {

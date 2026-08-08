@@ -235,8 +235,21 @@ const SONG_BLACK_KEY_BIAS = 0.5;
 const SONG_AIM_REACH_X = 1.00; // × unit
 const SONG_AIM_REACH_Y = 0.65; // × unit
 // BLACK-KEY LEAN — a hard-coded extra reach applied ONLY while the hand is going
-// for an accidental. Für Elise's G#3 is the case it exists for; it takes that
-// note's finger-on-key contact from 0% to 70%.
+// for an accidental. Für Elise's G#3 is the case it exists for.
+//
+// SET BY EYE, and currently BELOW the value that makes contact. The reach was
+// judged visually too far right twice and shortened on request, 0.66 -> 0.57 ->
+// 0.385 (356 -> 307 -> 207px at the shipping hand size). Finger-on-key contact
+// for the G# goes with it: 0.57 measures 60%, 0.48 measures 5%, and 0.44 and
+// below measure 0%. At 0.385 the fingertip stops short of the key. That is a
+// deliberate choice of look over contact — raise it back to 0.57 to reverse it.
+//
+// NOTE FOR THE NEXT TIME THIS IS ASKED TO COME DOWN: the lean is only a fraction
+// of how far right the hand goes. At its furthest the thumb tip sits 734px right
+// of home, of which the lean is 207px — the other ~527px is the aim loop's own
+// travel, bounded by SONG_AIM_REACH_X. Taking 100px off the lean moved the peak
+// 834 -> 734, about 12%. If the reach still reads as too far, SONG_AIM_REACH_X
+// is the bigger lever, and it affects every note rather than only accidentals.
 //
 // Deliberately a constant rather than derived. A black key is set back in depth,
 // and at this near-edge-on yaw depth maps to a long move right: the key's near
@@ -248,21 +261,17 @@ const SONG_AIM_REACH_Y = 0.65; // × unit
 // still misses. More lookahead with a stiffer spring gets there only at 28px per
 // frame, the visible dart that was rejected twice.
 //
-// Three things the sweeps settled, none of them what was expected:
+// Two things the sweeps settled that are NOT about the magnitude:
 //
 //  - THE VERTICAL COMPONENT MUST BE ZERO. "Right and down" is the intuition, but
 //    the key runs right and slightly UP (slope -0.064 on screen), so any
-//    downward lean walks the tip out through the bottom edge. y = -0.04 and
-//    y = +0.14 both measure 0%; y = 0 measures 70%.
-//  - X SITS ON A PLATEAU, not a peak: 0.52 -> 35%, 0.56 -> 55%, 0.60 through
-//    0.72 -> 70%. 0.66 is the middle of that, so it is not balanced on an edge.
+//    downward lean walks the tip out through the bottom edge. At the contacting
+//    magnitude, y = -0.04 and y = +0.14 both measured 0%; y = 0 measured 70%.
 //  - IT MUST BE HIDDEN FROM THE AIM LOOP (see the subtraction at the aim block).
 //    Left visible, the loop reads the lean as progress and steers to cancel it —
 //    that version needed twice the lean and cost 1.5px/frame of hand motion.
 //    Hidden, hand motion is completely unchanged.
-//
-// Verified at 1024x768 through 1920x1080: 70% at every one.
-const BLACK_NUDGE_X = 0.57; // × unit, rightward — the plateau centre
+const BLACK_NUDGE_X = 0.385; // × unit, rightward — by eye; 0.57 is where contact starts
 const BLACK_NUDGE_Y = 0; // × unit — NOT downward; see above
 // Seconds for the lean to travel its full distance, in and out. This is a
 // TIME-based S-curve rather than the usual exponential approach, because an
