@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { SONGS } from "./songs";
-import { FUR_ELISE_SCORE, PRELUDE_IN_C_SCORE } from "./__fixtures__/scores";
+import { FUR_ELISE_SCORE } from "./__fixtures__/scores";
 
 /**
  * SCORE FIDELITY — is the note data actually the piece?
@@ -18,11 +18,13 @@ const key = (n) => `${n[0]}|${n[1]}|${n[3]}`; // onset|midi|hand — duration co
 const describeNote = (n) => `${noteName(n[1])} ${n[3]} @${n[0]} (dur ${n[2]})`;
 
 // songs.js authors in whatever subdivision suits the piece; the fixture is in
-// sixteenths. Für Elise's unit IS a sixteenth; the Prelude's is too.
+// sixteenths. Für Elise's unit IS a sixteenth.
+//
+// Kept as a table of one so a second piece can be added back by appending a row
+// rather than rewriting the file — the Prelude in C lived here until it was
+// removed, and is recoverable from git history along with its fixture.
 const CASES = [
   { id: "fur-elise", score: FUR_ELISE_SCORE, limit: Infinity },
-  // songs.js implements the first four measures = 64 sixteenths
-  { id: "prelude-in-c", score: PRELUDE_IN_C_SCORE, limit: 64 },
 ];
 
 describe("score fidelity", () => {
@@ -84,8 +86,8 @@ describe("score fidelity", () => {
 
   it("never leaves the left hand idle for more than a bar while the melody plays", () => {
     // A late or dropped LH entry shows up as a long silent stretch under an
-    // active melody. Für Elise is 3/8 (6 sixteenths); the Prelude 4/4 (16).
-    const BAR = { "fur-elise": 6, "prelude-in-c": 16 };
+    // active melody. Für Elise is 3/8, so a bar is 6 sixteenths.
+    const BAR = { "fur-elise": 6 };
     for (const { id, limit } of CASES) {
       const song = SONGS.find((s) => s.id === id);
       const left = song.notes.filter((n) => n[3] === "L" && n[0] < limit).map((n) => n[0]).sort((a, b) => a - b);

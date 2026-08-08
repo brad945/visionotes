@@ -106,23 +106,8 @@ describe("key naming matches the renderer", () => {
     });
   });
 
-  it("names the Prelude's left hand correctly, note by note", () => {
-    const c = compileSong(SONGS.find((x) => x.id === "prelude-in-c"));
-    const seen = new Map();
-    for (const n of c.notes.filter((x) => x.hand === "L")) {
-      const slot = n.key.white - c.keyOffset;
-      seen.set(noteName(n.midi), rendererWhiteName(slot));
-    }
-    expect(Object.fromEntries([...seen].sort())).toEqual({
-      B3: "B",
-      C4: "C",
-      D4: "D",
-      E4: "E",
-    });
-  });
-
   it("agrees with the renderer for every pitch on a real keyboard", () => {
-    // Not just our two pieces: the rule must hold for all 88 keys, so a future
+    // Not just the one piece: the rule must hold for all 88 keys, so a future
     // piece cannot reintroduce this.
     for (let midi = 21; midi <= 108; midi++) {
       const k = midiToKey(midi);

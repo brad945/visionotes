@@ -150,12 +150,4 @@ describe("song key mapping", () => {
     expect(keyOf(57) - keyOf(52)).toBe(3); // E3 -> A3
   });
 
-  it("puts the Prelude's left hand on four adjacent white keys", () => {
-    // B3 C4 D4 E4 — literally consecutive naturals.
-    const c = compileSong(SONGS.find((s) => s.id === "prelude-in-c"));
-    const keyOf = (midi) => c.notes.find((n) => n.hand === "L" && n.midi === midi).key;
-    const base = keyOf(59).white;
-    expect([59, 60, 62, 64].map((m) => keyOf(m).white - base)).toEqual([0, 1, 2, 3]);
-    expect([59, 60, 62, 64].map((m) => keyOf(m).black)).toEqual([false, false, false, false]);
-  });
 });

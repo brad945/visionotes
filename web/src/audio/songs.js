@@ -27,37 +27,6 @@
  * room for a transcription slip.
  */
 
-// --- Prelude in C (Bach, WTC I) ---------------------------------------------
-// Every bar is one broken chord stated TWICE, written out in full. Within each
-// half the left hand lays down its two notes and holds them while the right hand
-// plays its three above, then repeats that same three-note group.
-//
-// Pitches verified against the Humdrum kern, LilyPond and MusicXML editions of
-// BWV 846: the left hand sits on MIDDLE C, not the C below it. An earlier version
-// of this data was a full octave low, which both darkened the piece and made the
-// synth's bass ring (which lengthens with depth) muddy the arpeggio.
-function preludeInC() {
-  const bars = [
-    { L: [60, 64], R: [67, 72, 76] }, // m1  C      — C4 E4 / G4 C5 E5
-    { L: [60, 62], R: [69, 74, 77] }, // m2  Dm7/C  — C4 D4 / A4 D5 F5
-    { L: [59, 62], R: [67, 74, 77] }, // m3  G7/B   — B3 D4 / G4 D5 F5
-    { L: [60, 64], R: [67, 72, 76] }, // m4  C      — C4 E4 / G4 C5 E5
-  ];
-  const notes = [];
-  bars.forEach((bar, b) => {
-    for (let half = 0; half < 2; half++) {
-      const u = b * 16 + half * 8;
-      notes.push([u, bar.L[0], 8, "L"]); // bass rings under the whole figure
-      notes.push([u + 1, bar.L[1], 7, "L"]);
-      // Each RH note is a sixteenth and lasts a sixteenth — this is a running
-      // arpeggio, not a held chord. Only the LH sustains underneath.
-      bar.R.forEach((m, i) => notes.push([u + 2 + i, m, 1, "R"]));
-      bar.R.forEach((m, i) => notes.push([u + 5 + i, m, 1, "R"]));
-    }
-  });
-  return notes;
-}
-
 export const SONGS = [
   {
     id: "fur-elise",
@@ -98,13 +67,6 @@ export const SONGS = [
       // m8 — cadence on A
       [44, 69, 4, "R"], [44, 45, 1, "L"], [45, 52, 1, "L"], [46, 57, 1, "L"],
     ],
-  },
-  {
-    id: "prelude-in-c",
-    title: "Prelude in C",
-    composer: "Bach",
-    step: 0.19, // one sixteenth
-    notes: preludeInC(),
   },
 ];
 
