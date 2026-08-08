@@ -1296,10 +1296,31 @@ export default function HeroField({ background = false, scale = 0.34, followCurs
             ];
           });
           if (songBus.keys) {
+            const G0 = kbGeom;
+            probe.keyQuads = {};
             for (const id of songBus.keys.keys()) {
               const black = id[0] === "b";
               const abs = parseInt(id.slice(1), 10);
-              probe.keys[id] = kbGeom.keyPoint(abs - songBus.keyOffset, black);
+              const slot = abs - songBus.keyOffset;
+              probe.keys[id] = G0.keyPoint(slot, black);
+              // Publish the QUAD too, not just a point. Measuring the aim against
+              // "distance to a point on the key" is what misled several earlier
+              // attempts — a key is a ~2500px sliver, so a fingertip correctly on
+              // one can sit 2000px from any sampled point. And the quad has to be
+              // available for EVERY key on every frame, not just the aimed one:
+              // with a large lookahead the aim has already moved to the next note
+              // while the finger is still on this one, so an aim-anchored
+              // measurement silently changes what it is counting.
+              if (black) {
+                const bw = G0.wKeyW * 0.56;
+                const bx = G0.kbLeft + (slot + 1) * G0.wKeyW - bw / 2;
+                probe.keyQuads[id] = [G0.toScreen(G0.proj(bx, 0.12)), G0.toScreen(G0.proj(bx + bw, 0.12)),
+                                      G0.toScreen(G0.proj(bx + bw, 0.6)), G0.toScreen(G0.proj(bx, 0.6))];
+              } else {
+                const x0 = G0.kbLeft + slot * G0.wKeyW;
+                probe.keyQuads[id] = [G0.toScreen(G0.proj(x0, 0)), G0.toScreen(G0.proj(x0 + G0.wKeyW, 0)),
+                                      G0.toScreen(G0.proj(x0 + G0.wKeyW, 1)), G0.toScreen(G0.proj(x0, 1))];
+              }
             }
           }
           // Is the LIVE fingertip inside the quad of the key it is playing?

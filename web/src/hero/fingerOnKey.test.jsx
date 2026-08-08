@@ -2,6 +2,7 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { mountHero } from "./__harness__/heroHarness";
 import { SONGS, compileSong } from "../audio/songs";
+import { keyId } from "../audio/pianoKeys";
 
 /**
  * HOW THE HAND MOVES WHILE A PIECE PLAYS.
@@ -31,9 +32,50 @@ function play(hero, c, dtMs = 1000 / 60) {
     t = (i * dtMs) / 1000;
     hero.step(dtMs);
     const p = hero.probe;
-    if (p) frames.push({ t, x: p.pianoX, y: p.pianoY, aim: p.aim?.key, strike: p.aimStrike, on: p.tipOnAimedKey });
+    if (p) frames.push({ t, x: p.pianoX, y: p.pianoY, aim: p.aim?.key, strike: p.aimStrike, on: p.tipOnAimedKey,
+                         tips: p.tips, reach: p.reach, quads: p.keyQuads });
   }
   return frames;
+}
+
+function inPoly(x, y, p) {
+  let c = false;
+  for (let i = 0, j = p.length - 1; i < p.length; j = i++) {
+    if ((p[i][1] > y) !== (p[j][1] > y) &&
+        x < ((p[j][0] - p[i][0]) * (y - p[i][1])) / (p[j][1] - p[i][1]) + p[i][0]) c = !c;
+  }
+  return c;
+}
+
+/**
+ * Per-key contact, anchored to the NOTES rather than to the aim.
+ *
+ * Over each note's own window, is the striking finger's LIVE tip inside that
+ * note's key? Two things this fixes about the way it used to be measured:
+ *
+ *  - Aim-anchored filtering (`f.aim === "w33"`) only ever measured the keys it
+ *    was asked about, and every earlier number in this file was w33 and b32.
+ *    That hid the fact that w23 and w26 have essentially ZERO contact.
+ *  - The aim runs ahead of the music, so with a large lookahead it points at the
+ *    next note while the finger is still on this one. An aim-anchored count then
+ *    silently changes what it is counting as the lookahead is tuned, which made
+ *    two settings look comparable when they were not.
+ */
+function contactByKey(frames, c, keyIdOf) {
+  const tally = new Map();
+  for (const n of c.notes.filter((x) => x.hand === "L")) {
+    const id = keyIdOf(n.key);
+    const win = frames.filter((f) => f.t >= n.t && f.t < n.t + n.dur && f.quads && f.quads[id]);
+    if (!win.length) continue;
+    const on = win.filter((f) => {
+      const rt = f.tips[n.finger], rc = f.reach[n.finger];
+      return rt && rc && inPoly(rt[0] + rc[0], rt[1] + rc[1], f.quads[id]);
+    }).length;
+    const e = tally.get(id) || { n: 0, on: 0 };
+    e.n += win.length; e.on += on;
+    tally.set(id, e);
+  }
+  return tally;
 }
 
 describe("hand movement during playback", () => {
@@ -113,6 +155,36 @@ describe("hand movement during playback", () => {
     const on = frames.filter((f) => f.on).length;
     expect(frames.length).toBeGreaterThan(0);
     expect(on / frames.length).toBeGreaterThan(0.8);
+  });
+
+  it("records how often the striking finger is actually on its own key", () => {
+    // THE HONEST NUMBER, and it is not a good one. Measured per key, over each
+    // note's own window (see contactByKey):
+    //
+    //   w23   0%     w26   5%     w30  12%     w33  75%     b32   0%
+    //   whole piece: 22%
+    //
+    // Only the far white key tracks. Every other note in the piece is struck
+    // with the finger somewhere other than the key that lights up. Every earlier
+    // "coverage" figure in this file was w33 or b32 alone, so this never showed.
+    //
+    // It is not a tuning problem. The piece spans 9 white slots; the hand spans
+    // about 4, and the aim steers ONE finger — the one striking the current
+    // event — so the others land wherever the hand's pose puts them. Raising the
+    // reach, lookahead and spring stiffness together buys the black key (0% ->
+    // 60%) at p90 frame-to-frame motion of 28px/f, which is the "shakey" the
+    // owner rejected twice. The whole-piece figure barely moves: 22% -> 27%.
+    //
+    // Fixing it properly means steering the hand so the WHOLE pose lands, not
+    // one fingertip — a change to the aim, not to these constants. Until then
+    // this test exists to stop the number quietly getting worse.
+    hero = mountHero();
+    const c = song();
+    const tally = contactByKey(play(hero, c), c, keyId);
+    const all = [...tally.values()].reduce((a, e) => ({ n: a.n + e.n, on: a.on + e.on }), { n: 0, on: 0 });
+    expect(tally.size).toBeGreaterThan(3); // measuring every key, not just one
+    expect(all.on / all.n).toBeGreaterThan(0.18);
+    expect((tally.get("w33").on / tally.get("w33").n)).toBeGreaterThan(0.65);
   });
 
   it("documents that G# is approached but not landed inside its note", () => {
