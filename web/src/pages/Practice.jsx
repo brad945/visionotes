@@ -1,8 +1,11 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import useVision from "../vision/useVision";
 import { startSession, endSession, postFaults, postLandmarks } from "../api";
+import { createLandmarkUploader } from "../session/landmarkUploader";
+import { saveSession, saveErrorMessage } from "../session/saveSession";
 import FaultList from "../components/FaultList";
 import OnboardingModal from "../components/OnboardingModal";
+import ConfirmDialog from "../components/ConfirmDialog";
 
 // Map the active fault label strings from useVision into the shape FaultList
 // expects. `id` is derived from the fault's identity (stable across frames) so
@@ -22,6 +25,14 @@ function toFaultItems(labels) {
   return items;
 }
 
+// How often sampled skeleton frames are moved out of the vision hook and handed
+// to the uploader. Note what this interval does and does NOT bound: a mid-session
+// flush only uploads WHOLE chunks, so the replay a crashed tab loses is up to one
+// chunk (CHUNK_FRAMES = 300 frames at ~6fps, so ~50s), not 5 seconds. The
+// interval controls how promptly full chunks go out; CHUNK_FRAMES controls the
+// exposure. Anything shorter here would just add empty wake-ups.
+const LANDMARK_FLUSH_INTERVAL_MS = 5_000;
+
 const SIGNIFICANT_THRESHOLD_MS = 500;
 const LIVE_WINDOW_MS = 30_000;
 const FEEDBACK_LANES = [
@@ -38,12 +49,38 @@ export default function Practice() {
   const [phase, setPhase] = useState("idle");
   const [saving, setSaving] = useState(false);
   const [liveFeedbackEnabled, setLiveFeedbackEnabled] = useState(false);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(() => !localStorage.getItem("vn-onboarded"));
+  const [saveError, setSaveError] = useState(null);     // critical failure, retryable
+  const [replayWarning, setReplayWarning] = useState(null); // non-critical, dismissible
   const sessionRef = useRef(null); // { id, startedAt }
-  const { isLoading, error, faults, liveEvents, handsDetected, poseDetected, shouldersDetected, currentTs, start, stop } = useVision(
-    videoRef,
-    canvasRef
-  );
+  // Mirrors `saving`, but synchronously. React state updates are async, so two
+  // clicks dispatched in the SAME task both read the old `saving` (and the same
+  // stale JSX guard on the Retry button) and both start a save — which posts
+  // every fault row twice. A ref flips before either handler yields.
+  const savingRef = useRef(false);
+  const uploaderRef = useRef(null); // chunked landmark uploader for the live session
+  const pendingSaveRef = useRef(null); // { session, progress } kept for Retry
+  const {
+    isLoading, error, faults, liveEvents,
+    handsDetected, poseDetected, shouldersDetected, currentTs,
+    start, stop, drainLandmarkFrames, beginLandmarkCapture,
+  } = useVision(videoRef, canvasRef);
+
+  // Ship skeleton frames in chunks WHILE the session runs. The old code posted
+  // the entire session in one request at Stop, so the request size grew with
+  // session length and blew past the body limit after ~20s of practice. Now the
+  // request size is fixed and only the number of requests grows.
+  useEffect(() => {
+    if (phase !== "running") return;
+    const timer = setInterval(() => {
+      const uploader = uploaderRef.current;
+      if (!uploader) return;
+      uploader.push(drainLandmarkFrames());
+      uploader.flush(); // never throws; a mid-session replay hiccup stays silent
+    }, LANDMARK_FLUSH_INTERVAL_MS);
+    return () => clearInterval(timer);
+  }, [phase, drainLandmarkFrames]);
 
   // Step 1: open camera + start detection (no backend session yet)
   const handleSetupCamera = async () => {
@@ -57,35 +94,94 @@ export default function Practice() {
 
   // Step 2: camera looks good — create the backend session and start recording
   const handleConfirmFraming = async () => {
+    // Starting a new session abandons any unretried save: the banner that offered
+    // Retry is about to disappear, so the payload behind it must go too rather
+    // than linger as unreachable state.
+    pendingSaveRef.current = null;
+    setSaveError(null);
+    setReplayWarning(null);
     try {
       const { session_id } = await startSession();
       sessionRef.current = { id: session_id, startedAt: Date.now() };
+      // One uploader per session: chunk indices and the pending buffer are
+      // session-scoped, so a fresh session must never inherit either.
+      uploaderRef.current = createLandmarkUploader({
+        post: (frames, chunkIndex) => postLandmarks(session_id, frames, chunkIndex),
+      });
+      // Throw away frames captured while the user was still aiming the camera and
+      // re-zero the replay clock at t=0.
+      beginLandmarkCapture();
       setPhase("running");
     } catch (e) {
-      console.error("Failed to start session:", e);
+      setSaveError(`Couldn't start a session: ${e.message}`);
+    }
+  };
+
+  // Run (or re-run) the save path and translate its result into UI state.
+  const runSave = async (session, progress) => {
+    if (savingRef.current) return; // a save is already in flight — see savingRef
+    savingRef.current = true;
+    setSaving(true);
+    try {
+      const uploader = uploaderRef.current;
+      const result = await saveSession(
+        session,
+        {
+          postFaults,
+          endSession,
+          // Final flush: uploads the last partial chunk too. Resolves rather than
+          // rejects, so a missing replay can never fail the session save.
+          flushLandmarks: () =>
+            uploader ? uploader.flush({ final: true }) : Promise.resolve({ error: null }),
+        },
+        progress
+      );
+
+      if (result.ok) {
+        pendingSaveRef.current = null;
+        uploaderRef.current = null;
+        setSaveError(null);
+        setReplayWarning(result.replayWarning);
+      } else {
+        // Keep the payload AND how far it got, so Retry resumes instead of
+        // re-posting fault rows that already landed.
+        pendingSaveRef.current = { session, progress: result.progress };
+        console.error("Failed to save session:", result.error);
+        setSaveError(saveErrorMessage(result.failedStep, result.error));
+      }
+    } finally {
+      // In a `finally` because a latched `saving` is the same user-visible
+      // failure as a hung request: the Start button stays disabled forever with
+      // no banner explaining why. saveSession is contractually non-throwing, so
+      // this should be unreachable — which is exactly why it is cheap insurance.
+      savingRef.current = false;
+      setSaving(false);
     }
   };
 
   const handleStop = async () => {
     const { events, landmarkFrames } = stop();
     setPhase("idle");
-    setSaving(true);
 
-    try {
-      const { id, startedAt } = sessionRef.current;
-      const durationSeconds = Math.round((Date.now() - startedAt) / 1000);
+    const current = sessionRef.current;
+    sessionRef.current = null;
+    if (!current) return; // nothing was ever started — nothing to save
 
-      await Promise.all([
-        endSession(id, durationSeconds, events.length),
-        postFaults(id, events),
-        postLandmarks(id, landmarkFrames),
-      ]);
-    } catch (e) {
-      console.error("Failed to save session:", e);
-    } finally {
-      sessionRef.current = null;
-      setSaving(false);
-    }
+    uploaderRef.current?.push(landmarkFrames);
+    await runSave(
+      {
+        id: current.id,
+        durationSeconds: Math.round((Date.now() - current.startedAt) / 1000),
+        events,
+      },
+      {}
+    );
+  };
+
+  const handleRetrySave = async () => {
+    const pending = pendingSaveRef.current;
+    if (!pending) return;
+    await runSave(pending.session, pending.progress);
   };
 
   const running = phase === "running";
@@ -126,6 +222,37 @@ export default function Practice() {
 
       {error && (
         <p style={{ color: "var(--signal-deep)", fontWeight: 600 }}>{error}</p>
+      )}
+
+      {saveError && (
+        <SaveBanner
+          tone="error"
+          message={saveError}
+          action={pendingSaveRef.current && !saving ? { label: "Retry save", onClick: handleRetrySave } : null}
+          // Dismissing drops the ONLY in-memory copy of this session's fault events —
+          // there is no way to recover them afterwards. A ✕ reads as "hide this
+          // message", so confirm before it silently discards a whole practice.
+          onDismiss={() => setConfirmDiscard(true)}
+        />
+      )}
+
+      <ConfirmDialog
+        open={confirmDiscard}
+        title="Discard unsaved session?"
+        message="This practice session hasn't been saved. Dismissing discards its posture data permanently — you can't get it back."
+        confirmLabel="Discard"
+        cancelLabel="Keep trying"
+        onConfirm={() => {
+          pendingSaveRef.current = null;
+          uploaderRef.current = null;
+          setSaveError(null);
+          setConfirmDiscard(false);
+        }}
+        onCancel={() => setConfirmDiscard(false)}
+      />
+
+      {replayWarning && (
+        <SaveBanner tone="warn" message={replayWarning} onDismiss={() => setReplayWarning(null)} />
       )}
 
       {liveFeedbackEnabled && running && (
@@ -176,6 +303,44 @@ export default function Practice() {
         </p>
       )}
     </main>
+  );
+}
+
+// A save failure used to be a console.error the user never saw — the replay and
+// the session data just vanished. This is the visible half of that fix; the
+// repair half is the Retry action, which resumes from the failed step.
+function SaveBanner({ tone, message, action, onDismiss }) {
+  const isError = tone === "error";
+  return (
+    <div
+      role={isError ? "alert" : "status"}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 12,
+        flexWrap: "wrap",
+        border: `1px solid ${isError ? "var(--signal)" : "var(--line-strong)"}`,
+        background: isError ? "var(--signal-soft)" : "var(--surface-sunken)",
+        color: isError ? "var(--signal-deep)" : "var(--ink-muted)",
+        borderRadius: "var(--r-md)",
+        padding: "10px 14px",
+        marginBottom: 16,
+        fontSize: "0.875rem",
+        fontWeight: 500,
+      }}
+    >
+      <span style={{ flex: 1, minWidth: 200 }}>{message}</span>
+      {action && (
+        <button className="vn-btn" onClick={action.onClick} style={{ padding: "6px 12px", fontSize: "0.8rem" }}>
+          {action.label}
+        </button>
+      )}
+      <button
+        onClick={onDismiss}
+        aria-label="Dismiss"
+        style={{ background: "none", border: "none", cursor: "pointer", color: "inherit", fontSize: 14, padding: 2 }}
+      >✕</button>
+    </div>
   );
 }
 

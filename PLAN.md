@@ -64,9 +64,11 @@ Backend (Express / Node)  ── store/retrieve ──▶  Supabase (Postgres + 
 All require an authenticated Supabase user; backend scopes queries to that user.
 - `POST   /sessions`            → start; returns `{ session_id }`
 - `PATCH  /sessions/:id`        → end; body `{ ended_at, duration_seconds, total_faults }`
-- `POST   /sessions/:id/faults` → batch-log faults; body `{ faults: [ { fault_type, hand, timestamp_ms, value } ] }`
+- `POST   /sessions/:id/faults` → batch-log faults; body `{ faults: [ { fault_type, hand, timestamp_ms, value } ] }`. Server caps a batch at 5000; the client posts in batches of 1000 and resumes at the first unsent batch on Retry (a chattering session in this project's own data logged 24.5 events/sec, so one-request-per-session hits the cap after ~3.4 min).
 - `GET    /sessions`            → list user's sessions
 - `GET    /sessions/:id`        → one session + its fault_events
+- `POST   /sessions/:id/landmarks` → store ONE chunk of skeleton replay frames; body `{ frames: [...], chunk_index }`. Upserts on (session_id, chunk_index) — chunks are uploaded *during* the session, so request size is constant (~300 frames) instead of growing with session length, and re-posting a chunk is idempotent.
+- `GET    /sessions/:id/landmarks` → the session's frames, chunks stitched in index order
 
 **Flow:** browser detects faults locally → on session end, PATCH summary + POST batched faults → Supabase stores → history reads via GET.
 

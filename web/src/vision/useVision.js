@@ -21,9 +21,13 @@ import {
 import { FaultSmoother } from "./faults";
 import { drawHand, drawArms } from "./draw";
 
-// CDN path for the WASM + model files MediaPipe needs at runtime
+// CDN path for the WASM + model files MediaPipe needs at runtime.
+// PINNED deliberately: @latest would let an upstream release change the WASM under a
+// build that never shipped, and it must match the installed @mediapipe/tasks-vision
+// version in package.json — a mismatched loader and JS API can fail at runtime.
+const TASKS_VISION_VERSION = "0.10.35";
 const VISION_WASM_CDN =
-  "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm";
+  `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${TASKS_VISION_VERSION}/wasm`;
 const HAND_MODEL_URL =
   "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
 const POSE_MODEL_URL =
@@ -114,9 +118,15 @@ export default function useVision(videoRef, canvasRef) {
     let framePoseDetected = false;
     let frameShouldersDetected = false;
 
+    // Detection results are hoisted so the replay sampler below can REUSE them.
+    // They describe this exact video frame, so re-detecting for the sampler would
+    // burn a second full inference to recompute an identical answer.
+    let handResult = null;
+    let poseResult = null;
+
     // --- Hands ---
     try {
-      const handResult = handLandmarkerRef.current.detectForVideo(video, ts);
+      handResult = handLandmarkerRef.current.detectForVideo(video, ts);
       if (handResult.landmarks && handResult.handedness) {
         frameHandsDetected = handResult.landmarks.length > 0;
         for (let i = 0; i < handResult.landmarks.length; i++) {
@@ -126,8 +136,15 @@ export default function useVision(videoRef, canvasRef) {
 
           const collapsed = isWristCollapsed(lm);
           const faultIndices = new Set();
+          // MediaPipe returns "Unknown" when it cannot tell which hand it is seeing.
+          // The `hand` column only accepts 'left'/'right' (or NULL), so posting
+          // "unknown" fails the ENTIRE fault batch with a 400 that Retry can never
+          // clear — losing the whole session's faults. NULL is the honest value:
+          // the fault was real, the handedness was not determined.
+          const handLabel = label.toLowerCase();
+          const hand = handLabel === "left" || handLabel === "right" ? handLabel : null;
           const { active } = wristSmootherRef.current.push(
-            label, collapsed, "collapsed_wrist", label.toLowerCase(), ts
+            label, collapsed, "collapsed_wrist", hand, ts
           );
 
           if (active) {
@@ -148,7 +165,7 @@ export default function useVision(videoRef, canvasRef) {
     lastTsRef.current = poseTs;
 
     try {
-      const poseResult = poseLandmarkerRef.current.detectForVideo(video, poseTs);
+      poseResult = poseLandmarkerRef.current.detectForVideo(video, poseTs);
       if (poseResult.landmarks && poseResult.landmarks.length > 0) {
         framePoseDetected = true;
         const body = poseResult.landmarks[0];
@@ -178,27 +195,35 @@ export default function useVision(videoRef, canvasRef) {
     // Sample hand + pose landmarks at ~6fps for replay. Only x/y stored (no z)
     // and rounded to 4dp to keep the JSON compact. Pose stores only the 6 arm
     // indices (11–16); hands store all 21 knuckle points.
+    //
+    // This REUSES handResult/poseResult from the detection above rather than
+    // calling detectForVideo again. It used to re-detect both models ~6x/second
+    // on a frame that had just been processed — a second hand inference and a
+    // second pose inference for an answer already in memory. On a 6fps sample
+    // against a loop already running two inferences per frame, that was roughly
+    // a third of all inference work spent recomputing known values, and it
+    // showed up as visible lag between the player and the drawn skeleton.
     if (now - lastSampleRef.current > 160) {
       lastSampleRef.current = now;
       const frameT = Math.round(now - sessionStartRef.current);
       let hands = null;
       let pose = null;
-      try {
-        const hr = handLandmarkerRef.current.detectForVideo(video, lastTsRef.current);
-        if (hr.landmarks && hr.landmarks.length) {
-          hands = hr.landmarks.map((lm, i) => ({
-            h: hr.handedness[i]?.[0]?.categoryName ?? "Unknown",
-            lm: lm.map((p) => [+p.x.toFixed(4), +p.y.toFixed(4)]),
-          }));
-        }
-      } catch { /* skip */ }
-      try {
-        const pr = poseLandmarkerRef.current.detectForVideo(video, lastTsRef.current + 1);
-        if (pr.landmarks && pr.landmarks.length) {
-          const body = pr.landmarks[0];
+
+      if (handResult?.landmarks?.length) {
+        hands = handResult.landmarks.map((lm, i) => ({
+          h: handResult.handedness?.[i]?.[0]?.categoryName ?? "Unknown",
+          lm: lm.map((p) => [+p.x.toFixed(4), +p.y.toFixed(4)]),
+        }));
+      }
+      if (poseResult?.landmarks?.length) {
+        const body = poseResult.landmarks[0];
+        // Guard each index: a partially-visible body can leave arm landmarks
+        // undefined, and the old code would have thrown into its catch. Here a
+        // throw would abort the whole frame, so check instead of relying on it.
+        if ([11, 12, 13, 14, 15, 16].every((i) => body[i])) {
           pose = [11, 12, 13, 14, 15, 16].map((i) => [+body[i].x.toFixed(4), +body[i].y.toFixed(4)]);
         }
-      } catch { /* skip */ }
+      }
       if (hands || pose) {
         landmarkFramesRef.current.push({ t: frameT, hands, pose });
       }
@@ -242,6 +267,37 @@ export default function useVision(videoRef, canvasRef) {
     }
     rafIdRef.current = requestAnimationFrame(detectLoop);
   }, [videoRef, canvasRef]);
+
+  // ---- skeleton replay buffer ----
+  // The buffer is drained, never read in place: uploads happen in chunks during
+  // the session AND once more at stop, and both paths must go through the same
+  // take-and-clear primitive. Two readers with independent clears is how the
+  // same frames end up uploaded twice under two chunk indices.
+  const drainLandmarkFrames = useCallback(() => {
+    const frames = landmarkFramesRef.current;
+    landmarkFramesRef.current = [];
+    return frames;
+  }, []);
+
+  // Called when recording actually starts (i.e. after camera framing is
+  // confirmed and a backend session exists). start() opens the camera during the
+  // framing phase, so without this the buffer would already hold frames that
+  // belong to no session, and every `t` would be offset by however long the user
+  // spent aiming the webcam. Re-zeroing here makes t=0 mean "recording started".
+  // The smoothers must be cleared here too, not just in start(). The detect loop runs
+  // throughout the framing phase, so without this a fault detected while the user was
+  // still aiming the webcam is harvested at Stop and posted as session data — inflating
+  // total_faults with posture the user never committed to, and (because
+  // SessionDetail derives its time origin from the earliest fault) dragging the whole
+  // replay timeline back before recording started.
+  const beginLandmarkCapture = useCallback(() => {
+    wristSmootherRef.current.clear();
+    armSmootherRef.current.clear();
+    setLiveEvents([]);
+    landmarkFramesRef.current = [];
+    lastSampleRef.current = 0;
+    sessionStartRef.current = performance.now();
+  }, []);
 
   // ---- start / stop ----
   const start = useCallback(async () => {
@@ -297,10 +353,10 @@ export default function useVision(videoRef, canvasRef) {
       ...wristSmootherRef.current.harvest(),
       ...armSmootherRef.current.harvest(),
     ];
-    const landmarkFrames = landmarkFramesRef.current;
-    landmarkFramesRef.current = [];
+    // Whatever has not been uploaded yet — the caller flushes it as the final chunk.
+    const landmarkFrames = drainLandmarkFrames();
     return { events, landmarkFrames };
-  }, [videoRef]);
+  }, [videoRef, drainLandmarkFrames]);
 
   // Clean up on unmount
   useEffect(() => {
@@ -314,5 +370,9 @@ export default function useVision(videoRef, canvasRef) {
     };
   }, []);
 
-  return { isLoading, error, faults, liveEvents, stats, handsDetected, poseDetected, shouldersDetected, currentTs, start, stop };
+  return {
+    isLoading, error, faults, liveEvents, stats,
+    handsDetected, poseDetected, shouldersDetected, currentTs,
+    start, stop, drainLandmarkFrames, beginLandmarkCapture,
+  };
 }
