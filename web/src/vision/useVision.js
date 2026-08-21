@@ -17,6 +17,9 @@ import {
   isWristCollapsed,
   WRIST_FAULT_INDICES,
   checkArmPosture,
+  checkFlatFingers,
+  checkBackPosture,
+  checkSideView,
 } from "../logic/faults";
 import { FaultSmoother } from "./faults";
 import { drawHand, drawArms } from "./draw";
@@ -42,6 +45,9 @@ export default function useVision(videoRef, canvasRef) {
   const [handsDetected, setHandsDetected] = useState(false);
   const [poseDetected, setPoseDetected] = useState(false);
   const [shouldersDetected, setShouldersDetected] = useState(false);
+  // Framing-only signal: is the camera square enough to the player's side? Not a
+  // fault — a bad angle is fixed once, before recording, not coached per frame.
+  const [isSideView, setIsSideView] = useState(false);
   const [currentTs, setCurrentTs] = useState(0);
 
   // Mutable refs that persist across renders without re-triggering them
@@ -52,6 +58,7 @@ export default function useVision(videoRef, canvasRef) {
   const lastTsRef = useRef(0);
   const wristSmootherRef = useRef(new FaultSmoother());
   const armSmootherRef = useRef(new FaultSmoother());
+  const backSmootherRef = useRef(new FaultSmoother());
   const fpsFramesRef = useRef([]); // timestamps of recent frames for FPS calc
   const lastStateUpdateRef = useRef(0); // throttle React state updates
   const landmarkFramesRef = useRef([]); // skeleton replay frames
@@ -117,6 +124,7 @@ export default function useVision(videoRef, canvasRef) {
     let frameHandsDetected = false;
     let framePoseDetected = false;
     let frameShouldersDetected = false;
+    let frameIsSideView = false;
 
     // Detection results are hoisted so the replay sampler below can REUSE them.
     // They describe this exact video frame, so re-detecting for the sampler would
@@ -152,6 +160,14 @@ export default function useVision(videoRef, canvasRef) {
             activeFaults.push(`${label} wrist collapsed`);
           }
 
+          // Flat fingers. Keyed per hand like the wrist check, but on its own
+          // smoother label so a flat-finger period cannot cancel a wrist period.
+          const { fault: fingersFlat } = checkFlatFingers(lm);
+          const { active: flatActive } = wristSmootherRef.current.push(
+            `${label}-fingers`, fingersFlat, "flat_fingers", hand, ts
+          );
+          if (flatActive) activeFaults.push(`${label} fingers flat`);
+
           drawHand(ctx, lm, w, h, faultIndices);
         }
       }
@@ -184,6 +200,22 @@ export default function useVision(videoRef, canvasRef) {
             activeFaults.push(`${side} arm posture`);
           }
         }
+
+        // Back posture. Silent when the hips are occluded or cropped — common at
+        // a piano — because checkBackPosture returns no reading rather than a
+        // guess, and pushing `false` there would just look like good posture.
+        const { fault: backFault, leanDeg } = checkBackPosture(body);
+        if (leanDeg !== null) {
+          const { active: backActive } = backSmootherRef.current.push(
+            "back", backFault, "back_posture", null, poseTs
+          );
+          if (backActive) activeFaults.push("back not straight");
+        }
+
+        // Camera framing, not a fault: reported to the UI so the framing step can
+        // tell the player to move the camera BEFORE recording starts.
+        const { isSideView: sideOk } = checkSideView(body);
+        frameIsSideView = sideOk;
 
         drawArms(ctx, body, w, h, faultArms);
       }
@@ -263,6 +295,7 @@ export default function useVision(videoRef, canvasRef) {
       setHandsDetected(frameHandsDetected);
       setPoseDetected(framePoseDetected);
       setShouldersDetected(frameShouldersDetected);
+      setIsSideView(frameIsSideView);
       setCurrentTs(lastTsRef.current);
     }
     rafIdRef.current = requestAnimationFrame(detectLoop);
@@ -293,6 +326,7 @@ export default function useVision(videoRef, canvasRef) {
   const beginLandmarkCapture = useCallback(() => {
     wristSmootherRef.current.clear();
     armSmootherRef.current.clear();
+    backSmootherRef.current.clear();
     setLiveEvents([]);
     landmarkFramesRef.current = [];
     lastSampleRef.current = 0;
@@ -306,6 +340,7 @@ export default function useVision(videoRef, canvasRef) {
     // Reset smoothing + fault log + skeleton capture
     wristSmootherRef.current.clear();
     armSmootherRef.current.clear();
+    backSmootherRef.current.clear();
     fpsFramesRef.current = [];
     lastTsRef.current = 0;
     landmarkFramesRef.current = [];
@@ -349,9 +384,11 @@ export default function useVision(videoRef, canvasRef) {
     const endMs = lastTsRef.current;
     wristSmootherRef.current.finalize(endMs);
     armSmootherRef.current.finalize(endMs);
+    backSmootherRef.current.finalize(endMs);
     const events = [
       ...wristSmootherRef.current.harvest(),
       ...armSmootherRef.current.harvest(),
+      ...backSmootherRef.current.harvest(),
     ];
     // Whatever has not been uploaded yet — the caller flushes it as the final chunk.
     const landmarkFrames = drainLandmarkFrames();
@@ -372,7 +409,7 @@ export default function useVision(videoRef, canvasRef) {
 
   return {
     isLoading, error, faults, liveEvents, stats,
-    handsDetected, poseDetected, shouldersDetected, currentTs,
+    handsDetected, poseDetected, shouldersDetected, isSideView, currentTs,
     start, stop, drainLandmarkFrames, beginLandmarkCapture,
   };
 }

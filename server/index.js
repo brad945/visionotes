@@ -191,7 +191,11 @@ app.post("/sessions/:id/faults", async (req, res) => {
     return res.status(400).json({ error: `faults may not exceed ${MAX_FAULTS} entries` });
   }
 
-  const FAULT_TYPES = ["collapsed_wrist", "arm_posture"];
+  // Must stay in step with the CHECK constraint on fault_events.fault_type
+  // (see supabase/migrations/003_more_fault_types.sql). Validating here turns a
+  // bad type into a 400 naming the offending index instead of a 500 carrying
+  // raw Postgres constraint text.
+  const FAULT_TYPES = ["collapsed_wrist", "arm_posture", "flat_fingers", "back_posture"];
   const HANDS = ["left", "right"];
 
   for (const [i, f] of incoming.entries()) {

@@ -38,8 +38,12 @@ const LIVE_WINDOW_MS = 30_000;
 const FEEDBACK_LANES = [
   { key: "left_arm_posture", hand: "left", fault_type: "arm_posture" },
   { key: "left_collapsed_wrist", hand: "left", fault_type: "collapsed_wrist" },
+  { key: "left_flat_fingers", hand: "left", fault_type: "flat_fingers" },
   { key: "right_arm_posture", hand: "right", fault_type: "arm_posture" },
   { key: "right_collapsed_wrist", hand: "right", fault_type: "collapsed_wrist" },
+  { key: "right_flat_fingers", hand: "right", fault_type: "flat_fingers" },
+  // Back posture has no handedness — it is one torso, so `hand` is null.
+  { key: "back_posture", hand: null, fault_type: "back_posture" },
 ];
 
 export default function Practice() {
@@ -63,7 +67,7 @@ export default function Practice() {
   const pendingSaveRef = useRef(null); // { session, progress } kept for Retry
   const {
     isLoading, error, faults, liveEvents,
-    handsDetected, poseDetected, shouldersDetected, currentTs,
+    handsDetected, poseDetected, shouldersDetected, isSideView, currentTs,
     start, stop, drainLandmarkFrames, beginLandmarkCapture,
   } = useVision(videoRef, canvasRef);
 
@@ -290,6 +294,7 @@ export default function Practice() {
             handsDetected={handsDetected}
             poseDetected={poseDetected}
             shouldersDetected={shouldersDetected}
+            isSideView={isSideView}
             onConfirm={handleConfirmFraming}
           />
         )}
@@ -422,7 +427,24 @@ function PostureTip() {
   );
 }
 
-function FramingOverlay({ handsDetected, poseDetected, shouldersDetected, onConfirm }) {
+// Seconds between pressing "Start recording" and the session actually starting,
+// so the player has time to get their hands back on the keys instead of the first
+// seconds of every session capturing them reaching away from the mouse.
+const START_COUNTDOWN_SECONDS = 3;
+
+function FramingOverlay({ handsDetected, poseDetected, shouldersDetected, isSideView, onConfirm }) {
+  const [countdown, setCountdown] = useState(null);
+
+  useEffect(() => {
+    if (countdown === null) return;
+    if (countdown === 0) {
+      onConfirm();
+      return;
+    }
+    const timer = setTimeout(() => setCountdown((n) => n - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [countdown, onConfirm]);
+
   const checks = [
     {
       label: "Hands visible",
@@ -439,9 +461,19 @@ function FramingOverlay({ handsDetected, poseDetected, shouldersDetected, onConf
       ok: shouldersDetected,
       tip: "Pull back further so at least one shoulder is visible",
     },
+    {
+      // Both shoulders spread wide apart means the camera is off to the front
+      // at a 3/4 angle. The elbow and wrist geometry every fault check relies on
+      // is measured in 2D, so a 3/4 view foreshortens the arm and quietly makes
+      // every angle wrong — better to block here than to coach from bad numbers.
+      label: "Side-on angle",
+      ok: isSideView,
+      tip: "Move the camera around to your side — it's at too much of an angle",
+    },
   ];
 
-  const allGood = handsDetected && poseDetected && shouldersDetected;
+  const allGood = handsDetected && poseDetected && shouldersDetected && isSideView;
+  const counting = countdown !== null;
 
   return (
     <div style={{
@@ -496,11 +528,15 @@ function FramingOverlay({ handsDetected, poseDetected, shouldersDetected, onConf
 
       <button
         className="vn-btn vn-btn--primary"
-        onClick={onConfirm}
-        disabled={!allGood}
-        style={{ opacity: allGood ? 1 : 0.4, cursor: allGood ? "pointer" : "not-allowed", marginTop: 4 }}
+        onClick={() => setCountdown(START_COUNTDOWN_SECONDS)}
+        disabled={!allGood || counting}
+        style={{ opacity: allGood ? 1 : 0.4, cursor: allGood && !counting ? "pointer" : "not-allowed", marginTop: 4 }}
       >
-        {allGood ? "Start recording" : "Waiting for camera…"}
+        {counting
+          ? `Starting in ${countdown}…`
+          : allGood
+            ? "Start recording"
+            : "Waiting for camera…"}
       </button>
     </div>
   );

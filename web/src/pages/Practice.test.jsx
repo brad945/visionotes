@@ -14,7 +14,7 @@
 // ---------------------------------------------------------------------------
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, cleanup, waitFor, act } from "@testing-library/react";
 
 vi.mock("../api", () => ({
   startSession: vi.fn(async () => ({ session_id: "11111111-2222-3333-4444-555555555555" })),
@@ -25,6 +25,10 @@ vi.mock("../api", () => ({
 
 // The real hook needs a webcam, WASM and models. All this test needs from it is
 // the framing checks passing and a stop() that hands back a session's worth of data.
+// Mutable so a test can flip a framing signal (e.g. a bad camera angle) without
+// re-mocking the module. Reset in beforeEach.
+const visionOverrides = { isSideView: true };
+
 vi.mock("../vision/useVision", () => ({
   default: () => ({
     isLoading: false,
@@ -34,6 +38,7 @@ vi.mock("../vision/useVision", () => ({
     handsDetected: true,
     poseDetected: true,
     shouldersDetected: true,
+    isSideView: visionOverrides.isSideView,
     currentTs: 1000,
     start: vi.fn(async () => {}),
     stop: vi.fn(() => ({
@@ -54,12 +59,15 @@ async function runASession() {
   fireEvent.click(screen.getByRole("button", { name: "Start Session" }));
   const startRecording = await screen.findByRole("button", { name: "Start recording" });
   fireEvent.click(startRecording);
-  const stopButton = await screen.findByRole("button", { name: "Stop" });
+  // Recording no longer begins on click: there is a 3s countdown first, so Stop
+  // appears later than testing-library's default 1s findBy timeout allows.
+  const stopButton = await screen.findByRole("button", { name: "Stop" }, { timeout: 5000 });
   fireEvent.click(stopButton);
 }
 
 beforeEach(() => {
   localStorage.setItem("vn-onboarded", "1"); // skip the onboarding modal
+  visionOverrides.isSideView = true;
   vi.clearAllMocks();
   // clearAllMocks resets calls but NOT implementations, so restate the happy-path
   // defaults here — otherwise one test's rejection leaks into the next.
@@ -201,5 +209,50 @@ describe("dismissing an unsaved session asks first", () => {
 
     await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
     expect(screen.queryByRole("button", { name: "Retry save" })).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Framing gate + countdown. Both stand between the user and a recording, so a
+// regression here means either sessions cannot be started at all, or they start
+// from a camera angle whose 2D arm geometry is unreliable.
+// ---------------------------------------------------------------------------
+describe("the framing step gates on camera angle", () => {
+  it("blocks recording when the camera is at a 3/4 angle", async () => {
+    visionOverrides.isSideView = false;
+
+    render(<Practice />);
+    fireEvent.click(screen.getByRole("button", { name: "Start Session" }));
+
+    const button = await screen.findByRole("button", { name: "Waiting for camera…" });
+    expect(button.disabled).toBe(true);
+    // The checklist should say WHY, not just refuse.
+    expect(screen.getByText(/move the camera around to your side/i)).toBeTruthy();
+  });
+
+  it("counts down instead of recording the instant the button is clicked", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      render(<Practice />);
+      fireEvent.click(screen.getByRole("button", { name: "Start Session" }));
+      const start = await screen.findByRole("button", { name: "Start recording" });
+
+      fireEvent.click(start);
+
+      // Immediately after the click the session must NOT have started.
+      expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
+      expect(screen.getByRole("button", { name: /Starting in 3/ })).toBeTruthy();
+      expect(api.startSession).not.toHaveBeenCalled();
+
+      // Tick one second at a time: each tick re-renders and schedules the NEXT
+      // timeout from an effect, so a single 3s jump would not flush the chain.
+      for (let i = 0; i < 4; i++) {
+        await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+      }
+
+      expect(api.startSession).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

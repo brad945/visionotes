@@ -29,6 +29,16 @@ export const HAND_LANDMARK = {
   PINKY_MCP: 17, // pinky knuckle
 };
 
+// Per-finger joint chains (MCP -> PIP -> TIP) for the four fingers. The thumb is
+// deliberately excluded: its saddle joint moves in a different plane, so the same
+// curl threshold would misread a perfectly normal thumb as flat.
+export const FINGER_CHAINS = [
+  { name: "index", mcp: 5, pip: 6, tip: 8 },
+  { name: "middle", mcp: 9, pip: 10, tip: 12 },
+  { name: "ring", mcp: 13, pip: 14, tip: 16 },
+  { name: "pinky", mcp: 17, pip: 18, tip: 20 },
+];
+
 // MediaPipe Pose landmark indices for the arms.
 export const POSE_LANDMARK = {
   LEFT_SHOULDER: 11,
@@ -37,10 +47,18 @@ export const POSE_LANDMARK = {
   RIGHT_ELBOW: 14,
   LEFT_WRIST: 15,
   RIGHT_WRIST: 16,
+  // pose_landmarker_full returns all 33 points, so the hips are available even
+  // though only the arms were mapped before. Shoulder->hip is the torso line.
+  LEFT_HIP: 23,
+  RIGHT_HIP: 24,
 };
 
 // Default acceptable elbow-angle window (degrees). Outside this is a fault.
-export const ELBOW_WINDOW = { min: 70, max: 160 };
+// Elbow window. `max` is the "arms too stretched" line: past ~130 the elbow is
+// heading toward locked-out, which pushes the player to reach from the shoulder
+// instead of staying loose over the keys. It was 160 (near-straight), which only
+// caught the extreme; 130 is the coaching threshold the owner plays to.
+export const ELBOW_WINDOW = { min: 70, max: 130 };
 
 // Minimum MediaPipe visibility for a pose landmark to be trusted.
 const MIN_VISIBILITY = 0.3;
@@ -151,4 +169,138 @@ export function checkArmPosture(poseLandmarks, side, window = ELBOW_WINDOW) {
   if (Number.isNaN(angle)) return { fault: false, elbowAngle: null };
 
   return { fault: angle > window.max || angle < window.min, elbowAngle: angle };
+}
+
+// --- Flat-finger detection -------------------------------------------------------
+
+// Curl angle at the PIP joint, in degrees. 180 = a perfectly straight finger;
+// smaller = more curved. A pianist's hand should hold a rounded arch, so a finger
+// approaching straight is the fault. NOT key-press detection — this measures the
+// shape of the finger, never which key it is over.
+export const FLAT_FINGER_ANGLE = 160;
+
+// How many of the four fingers must be flat before it counts. One straight finger
+// is normal (reaching for an interval); three or more is a collapsed arch.
+export const FLAT_FINGER_MIN_COUNT = 3;
+
+/**
+ * Flat-finger fault: too many fingers held straight instead of arched.
+ *
+ * @param {Array} landmarks - 21 hand landmarks ({x,y})
+ * @param {number} [angleThreshold=FLAT_FINGER_ANGLE]
+ * @param {number} [minCount=FLAT_FINGER_MIN_COUNT]
+ * @returns {{fault:boolean, flatCount:number, angles:Array<number|null>}}
+ */
+export function checkFlatFingers(
+  landmarks,
+  angleThreshold = FLAT_FINGER_ANGLE,
+  minCount = FLAT_FINGER_MIN_COUNT
+) {
+  if (!Array.isArray(landmarks) || landmarks.length < 21) {
+    return { fault: false, flatCount: 0, angles: [] };
+  }
+
+  const angles = FINGER_CHAINS.map(({ mcp, pip, tip }) => {
+    const a = landmarks[mcp];
+    const b = landmarks[pip];
+    const c = landmarks[tip];
+    if (!a || !b || !c) return null;
+    const angle = angleDeg(a, b, c);
+    return Number.isNaN(angle) ? null : angle;
+  });
+
+  const flatCount = angles.filter((a) => a !== null && a >= angleThreshold).length;
+  return { fault: flatCount >= minCount, flatCount, angles };
+}
+
+// --- Back posture (torso lean) ---------------------------------------------------
+
+// Degrees of lean from vertical before it counts as a fault.
+//
+// HONEST LIMIT: this measures how far the torso LEANS, not whether the upper back
+// is ROUNDED — which is usually what a teacher means by "sit up straight". Rounding
+// is a curvature of the spine between shoulders and neck, and pose landmarks give
+// no points along the spine to measure it. Slouching forward from the hips is
+// caught; hunching with the hips upright is not.
+export const BACK_LEAN_LIMIT_DEG = 15;
+
+/**
+ * Back-posture fault via torso lean from vertical.
+ *
+ * Uses the shoulder midpoint -> hip midpoint line. Returns "no reading" whenever
+ * the hips are missing or low-visibility, which is common at a piano: the bench
+ * and the instrument occlude them, and a seated player is often cropped at the
+ * waist. Staying silent is deliberate — a posture fault fired from a guessed hip
+ * position would train the player against noise.
+ *
+ * @param {Array} poseLandmarks - 33 pose landmarks ({x,y,visibility})
+ * @param {number} [limitDeg=BACK_LEAN_LIMIT_DEG]
+ * @returns {{fault:boolean, leanDeg:number|null}}
+ */
+export function checkBackPosture(poseLandmarks, limitDeg = BACK_LEAN_LIMIT_DEG) {
+  const ls = poseLandmarks?.[POSE_LANDMARK.LEFT_SHOULDER];
+  const rs = poseLandmarks?.[POSE_LANDMARK.RIGHT_SHOULDER];
+  const lh = poseLandmarks?.[POSE_LANDMARK.LEFT_HIP];
+  const rh = poseLandmarks?.[POSE_LANDMARK.RIGHT_HIP];
+  if (!ls || !rs || !lh || !rh) return { fault: false, leanDeg: null };
+
+  const visible = (p) => (p.visibility ?? 1) > MIN_VISIBILITY;
+  if (![ls, rs, lh, rh].every(visible)) return { fault: false, leanDeg: null };
+
+  const shoulderMid = { x: (ls.x + rs.x) / 2, y: (ls.y + rs.y) / 2 };
+  const hipMid = { x: (lh.x + rh.x) / 2, y: (lh.y + rh.y) / 2 };
+
+  const dx = shoulderMid.x - hipMid.x;
+  const dy = shoulderMid.y - hipMid.y; // negative = shoulders above hips (y grows downward)
+  if (dx === 0 && dy === 0) return { fault: false, leanDeg: null };
+
+  // Angle of the torso away from vertical, unsigned — leaning forward and leaning
+  // back are both faults, and in a side view we cannot reliably tell which anyway.
+  const leanDeg = (Math.atan2(Math.abs(dx), Math.abs(dy)) * 180) / Math.PI;
+  return { fault: leanDeg > limitDeg, leanDeg };
+}
+
+// --- Camera framing: is this actually a side view? -------------------------------
+
+// Shoulder separation as a fraction of upper-arm length. In a true side view the
+// far shoulder sits almost directly behind the near one, so the horizontal gap is
+// small. Turn toward 3/4 and the shoulders splay apart. Normalising by upper-arm
+// length makes this independent of how far the player sits from the camera —
+// a raw pixel gap would change meaning every time the tripod moved.
+export const SIDE_VIEW_MAX_RATIO = 0.6;
+
+/**
+ * Judge whether the camera is square-on enough to the player's side.
+ *
+ * This is a SETUP check, not a posture fault: a bad angle is one static mistake to
+ * fix before recording, so it gates the framing step instead of logging hundreds
+ * of identical fault rows during a session.
+ *
+ * @param {Array} poseLandmarks - 33 pose landmarks ({x,y,visibility})
+ * @param {number} [maxRatio=SIDE_VIEW_MAX_RATIO]
+ * @returns {{isSideView:boolean, ratio:number|null}}
+ */
+export function checkSideView(poseLandmarks, maxRatio = SIDE_VIEW_MAX_RATIO) {
+  const ls = poseLandmarks?.[POSE_LANDMARK.LEFT_SHOULDER];
+  const rs = poseLandmarks?.[POSE_LANDMARK.RIGHT_SHOULDER];
+  const le = poseLandmarks?.[POSE_LANDMARK.LEFT_ELBOW];
+  const re = poseLandmarks?.[POSE_LANDMARK.RIGHT_ELBOW];
+  if (!ls || !rs || !le || !re) return { isSideView: false, ratio: null };
+
+  const visible = (p) => (p.visibility ?? 1) > MIN_VISIBILITY;
+  if (!visible(ls) || !visible(rs)) return { isSideView: false, ratio: null };
+
+  const shoulderGap = Math.hypot(ls.x - rs.x, ls.y - rs.y);
+
+  // Scale reference: the longer visible upper arm. Using the longer one avoids
+  // dividing by an arm that is foreshortened to almost nothing in this very view.
+  const armLengths = [
+    visible(le) ? Math.hypot(ls.x - le.x, ls.y - le.y) : 0,
+    visible(re) ? Math.hypot(rs.x - re.x, rs.y - re.y) : 0,
+  ];
+  const scale = Math.max(...armLengths);
+  if (scale === 0) return { isSideView: false, ratio: null };
+
+  const ratio = shoulderGap / scale;
+  return { isSideView: ratio <= maxRatio, ratio };
 }
