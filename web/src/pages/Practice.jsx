@@ -435,15 +435,25 @@ const START_COUNTDOWN_SECONDS = 3;
 function FramingOverlay({ handsDetected, poseDetected, shouldersDetected, isSideView, onConfirm }) {
   const [countdown, setCountdown] = useState(null);
 
+  // onConfirm is re-created on every parent render, and useVision pushes state
+  // several times a second while the camera previews — so depending on it here
+  // re-ran this effect constantly, and each re-run cleared the pending timeout
+  // and started a fresh 1s one. The countdown sat at 3 forever. Holding it in a
+  // ref keeps the callback current while the effect depends only on the tick.
+  const onConfirmRef = useRef(onConfirm);
+  useEffect(() => {
+    onConfirmRef.current = onConfirm;
+  });
+
   useEffect(() => {
     if (countdown === null) return;
     if (countdown === 0) {
-      onConfirm();
+      onConfirmRef.current();
       return;
     }
     const timer = setTimeout(() => setCountdown((n) => n - 1), 1000);
     return () => clearTimeout(timer);
-  }, [countdown, onConfirm]);
+  }, [countdown]);
 
   const checks = [
     {

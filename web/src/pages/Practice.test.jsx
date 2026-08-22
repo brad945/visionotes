@@ -233,7 +233,7 @@ describe("the framing step gates on camera angle", () => {
   it("counts down instead of recording the instant the button is clicked", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
-      render(<Practice />);
+      const { rerender } = render(<Practice />);
       fireEvent.click(screen.getByRole("button", { name: "Start Session" }));
       const start = await screen.findByRole("button", { name: "Start recording" });
 
@@ -244,10 +244,18 @@ describe("the framing step gates on camera angle", () => {
       expect(screen.getByRole("button", { name: /Starting in 3/ })).toBeTruthy();
       expect(api.startSession).not.toHaveBeenCalled();
 
-      // Tick one second at a time: each tick re-renders and schedules the NEXT
-      // timeout from an effect, so a single 3s jump would not flush the chain.
-      for (let i = 0; i < 4; i++) {
-        await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+      // Advance in 250ms slices with a re-render before each one.
+      //
+      // The slicing is the POINT, not an artifact. The real useVision pushes
+      // state several times a second, so the parent re-renders FASTER than the
+      // 1s countdown timer and hands FramingOverlay a fresh onConfirm each time.
+      // When that identity was an effect dependency, every re-render cleared the
+      // pending timeout before it could fire and started a new one — the
+      // countdown stuck on "Starting in 3" forever. Re-rendering once per second
+      // would NOT reproduce that; the timer has to be interrupted mid-flight.
+      for (let i = 0; i < 16; i++) {
+        rerender(<Practice />);
+        await act(async () => { await vi.advanceTimersByTimeAsync(250); });
       }
 
       expect(api.startSession).toHaveBeenCalledTimes(1);
