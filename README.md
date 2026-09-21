@@ -17,7 +17,7 @@
 
 VisioNotes uses computer vision to watch a pianist's hands and arms **while they play a real piano**, then flags technique faults in real time, like a teacher looking over your shoulder:
 
-**Collapsed wrist** — wrist dropping below the knuckle line
+- **Collapsed wrist** — wrist dropping below the knuckle line
 - **Arm posture** — locked or overly-cramped elbow angles
 - *(more faults in progress — see roadmap)*
 
