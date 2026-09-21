@@ -15,10 +15,10 @@
 
 ## What it does
 
-VisioNotes uses computer vision to watch a pianist's hands and arms **while they play a real piano**, then flags technique faults in real time — the kind of thing a teacher catches looking over your shoulder:
+VisioNotes uses computer vision to watch a pianist's hands and arms **while they play a real piano**, then flags technique faults in real time, like a teacher looking over your shoulder:
 
-- 🖐️ **Collapsed wrist** — wrist dropping below the knuckle line
-- 💪 **Arm posture** — locked or overly-cramped elbow angles
+**Collapsed wrist** — wrist dropping below the knuckle line
+- **Arm posture** — locked or overly-cramped elbow angles
 - *(more faults in progress — see roadmap)*
 
 It deliberately does **not** try to detect *which notes you played* from the camera — that's an unsolved problem on a 2D webcam (your fingers hide the keys at the moment of the press). Instead it focuses on the thing a webcam *can* do reliably: **posture and form**, the gap left open by audio-only practice apps and $500 hardware coaches.
@@ -54,7 +54,7 @@ It deliberately does **not** try to detect *which notes you played* from the cam
 
 ---
 
-## 🛠️ Tech
+## Tech
 
 **Current (vision spike):** Python · MediaPipe Tasks API · OpenCV · NumPy
 
@@ -62,7 +62,7 @@ It deliberately does **not** try to detect *which notes you played* from the cam
 
 ---
 
-## 🚀 Run it locally
+## Run it locally
 
 > Requires **Python 3.12** (MediaPipe is not yet compatible with newer versions).
 > [`uv`](https://github.com/astral-sh/uv) is recommended — it ships a clean Python and avoids system-Python issues.
@@ -89,7 +89,7 @@ python piano_spike_starter.py
 
 ---
 
-## 🗺️ Roadmap
+## Roadmap
 
 - [x] Vision spike: live hand + arm landmark tracking
 - [x] Collapsed-wrist detection (heuristic + smoothing)
@@ -102,7 +102,7 @@ python piano_spike_starter.py
 
 ---
 
-## 📝 Notes
+## Notes
 
 This project is in active development. The current codebase is a **vision proof-of-concept** validating that posture coaching works from a plain webcam; the full-stack application is being built on top of it.
 
