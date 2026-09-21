@@ -27,7 +27,7 @@ It deliberately does **not** try to detect *which notes you played* from the cam
 
 ## 🎥 Demo
 
-> _**[ADD YOUR GIF HERE]** — a short screen recording of the live hand + arm tracking with a fault flagging. This is the single most important thing in the README. See "Adding the demo GIF" below._
+> _coming soon_
 
 <p align="center">
   <img src="demo.gif" alt="VisioNotes live tracking demo" width="600" />
